@@ -27,9 +27,18 @@ type LatLngLike = {
   lng(): number
 }
 
+type MapMouseEventLike = {
+  latLng: LatLngLike | null
+}
+
+type MapsEventListenerLike = {
+  remove(): void
+}
+
 type GoogleMapLike = {
   panTo(coords: { lat: number; lng: number }): void
   setZoom(level: number): void
+  addListener(eventName: string, handler: (event: MapMouseEventLike) => void): MapsEventListenerLike
 }
 
 type MarkerLike = {
@@ -128,6 +137,18 @@ function getRoutePoints(route: DirectionsResultLike['routes'][number]) {
   return route.overview_path ?? []
 }
 
+function parseLatLngInput(value: string) {
+  const match = value.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/)
+  if (!match) return null
+
+  const lat = Number(match[1])
+  const lng = Number(match[2])
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+
+  return { lat, lng }
+}
+
 function useGoogleMaps(apiKey: string) {
   const [loaded, setLoaded] = useState(() => Boolean(getGoogle()?.maps))
 
@@ -157,6 +178,9 @@ function useGoogleMaps(apiKey: string) {
 export default function App() {
   const mapRef = useRef<HTMLDivElement | null>(null)
   const mapInstanceRef = useRef<GoogleMapLike | null>(null)
+  const mapClickListenerRef = useRef<MapsEventListenerLike | null>(null)
+  const originMarkerRef = useRef<MarkerLike | null>(null)
+  const destinationMarkerRef = useRef<MarkerLike | null>(null)
   const markersRef = useRef<MarkerLike[]>([])
   const heatmapRef = useRef<HeatmapLike | null>(null)
   const directionsRendererRef = useRef<DirectionsRendererLike | null>(null)
@@ -171,8 +195,8 @@ export default function App() {
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
   const [routeError, setRouteError] = useState('')
   const [routeLoading, setRouteLoading] = useState(false)
-  const [safetyPriority, setSafetyPriority] = useState(70)
   const [showMarkers, setShowMarkers] = useState(true)
+  const [mapPickMode, setMapPickMode] = useState<'origin' | 'destination' | null>(null)
   const [tab, setTab] = useState<'heatmap' | 'route'>('heatmap')
 
   const sortedIncidents = useMemo(() => [...INCIDENTS].sort((a, b) => b.weight - a.weight), [])
@@ -202,6 +226,30 @@ export default function App() {
 
       marker.addListener('click', () => setSelectedIncident(incident))
       markersRef.current.push(marker)
+    })
+  }, [])
+
+  const placeRoutePointMarker = useCallback((kind: 'origin' | 'destination', coords: { lat: number; lng: number }) => {
+    const google = getGoogle()
+    const map = mapInstanceRef.current
+    if (!google?.maps || !map) return
+
+    const markerRef = kind === 'origin' ? originMarkerRef : destinationMarkerRef
+    markerRef.current?.setMap(null)
+
+    markerRef.current = new google.maps.Marker({
+      position: coords,
+      map,
+      title: kind === 'origin' ? 'Route origin' : 'Route destination',
+      label: kind === 'origin' ? 'A' : 'B',
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 11,
+        fillColor: kind === 'origin' ? '#3B6D11' : '#1E88E5',
+        fillOpacity: 0.95,
+        strokeColor: '#fff',
+        strokeWeight: 2,
+      },
     })
   }, [])
 
@@ -242,6 +290,12 @@ export default function App() {
     addMarkers(map)
 
     return () => {
+      mapClickListenerRef.current?.remove()
+      mapClickListenerRef.current = null
+      originMarkerRef.current?.setMap(null)
+      destinationMarkerRef.current?.setMap(null)
+      originMarkerRef.current = null
+      destinationMarkerRef.current = null
       markersRef.current.forEach((marker) => marker.setMap(null))
       directionsRendererRef.current?.setMap(null)
       heatmapRef.current?.setMap(null)
@@ -249,8 +303,56 @@ export default function App() {
   }, [addMarkers, mapsLoaded])
 
   useEffect(() => {
+    const map = mapInstanceRef.current
+    if (!map) return
+
+    mapClickListenerRef.current?.remove()
+    mapClickListenerRef.current = map.addListener('click', (event) => {
+      if (!event.latLng || !mapPickMode) return
+
+      const picked = `${event.latLng.lat().toFixed(6)}, ${event.latLng.lng().toFixed(6)}`
+
+      if (mapPickMode === 'origin') {
+        setOrigin(picked)
+        setMapPickMode('destination')
+      } else {
+        setDestination(picked)
+        setMapPickMode(null)
+      }
+      setTab('route')
+    })
+
+    return () => {
+      mapClickListenerRef.current?.remove()
+      mapClickListenerRef.current = null
+    }
+  }, [mapPickMode, mapsLoaded])
+
+  useEffect(() => {
     markersRef.current.forEach((marker) => marker.setVisible(showMarkers))
   }, [showMarkers])
+
+  useEffect(() => {
+    const coords = parseLatLngInput(origin)
+    if (!coords) {
+      originMarkerRef.current?.setMap(null)
+      originMarkerRef.current = null
+      return
+    }
+
+    placeRoutePointMarker('origin', coords)
+  }, [origin, placeRoutePointMarker])
+
+  useEffect(() => {
+    const coords = parseLatLngInput(destination)
+    if (!coords) {
+      destinationMarkerRef.current?.setMap(null)
+      destinationMarkerRef.current = null
+      return
+    }
+
+    placeRoutePointMarker('destination', coords)
+  }, [destination, placeRoutePointMarker])
 
   const calcRoute = useCallback(async () => {
     const google = getGoogle()
@@ -262,7 +364,7 @@ export default function App() {
 
     const highRisk = INCIDENTS.filter((item) => item.severity === 'high')
     const service = new google.maps.DirectionsService()
-    const hotspotRadiusMeters = 250
+    const hotspotRadiusMeters = 50
 
     try {
       const result = await service.route({
@@ -301,26 +403,30 @@ export default function App() {
 
         const validMetrics = routeMetrics.filter((metric) => Number.isFinite(metric.durationSeconds))
         if (validMetrics.length > 0) {
-          const minRisk = Math.min(...validMetrics.map((metric) => metric.riskScore))
-          const maxRisk = Math.max(...validMetrics.map((metric) => metric.riskScore))
-          const minDuration = Math.min(...validMetrics.map((metric) => metric.durationSeconds))
-          const maxDuration = Math.max(...validMetrics.map((metric) => metric.durationSeconds))
+          const safeRoutes = validMetrics.filter((metric) => metric.touchedHotspotsCount === 0)
+          const candidateRoutes = safeRoutes.length > 0 ? safeRoutes : validMetrics
 
-          const safetyWeight = safetyPriority / 100
-          const speedWeight = 1 - safetyWeight
-          let bestScore = Number.POSITIVE_INFINITY
+          if (safeRoutes.length === 0) {
+            setRouteError('No fully safe route found. Showing the safest available route.')
+          }
 
-          validMetrics.forEach((metric) => {
-            const riskNorm = maxRisk === minRisk ? 0 : (metric.riskScore - minRisk) / (maxRisk - minRisk)
-            const durationNorm =
-              maxDuration === minDuration
-                ? 0
-                : (metric.durationSeconds - minDuration) / (maxDuration - minDuration)
-            const score = riskNorm * safetyWeight + durationNorm * speedWeight
+          let bestTouched = Number.POSITIVE_INFINITY
+          let bestRisk = Number.POSITIVE_INFINITY
+          let bestDuration = Number.POSITIVE_INFINITY
 
-            if (score < bestScore) {
-              bestScore = score
+          candidateRoutes.forEach((metric) => {
+            const isBetter =
+              metric.touchedHotspotsCount < bestTouched ||
+              (metric.touchedHotspotsCount === bestTouched && metric.riskScore < bestRisk) ||
+              (metric.touchedHotspotsCount === bestTouched &&
+                metric.riskScore === bestRisk &&
+                metric.durationSeconds < bestDuration)
+
+            if (isBetter) {
               selectedRouteIndex = metric.index
+              bestTouched = metric.touchedHotspotsCount
+              bestRisk = metric.riskScore
+              bestDuration = metric.durationSeconds
             }
           })
         }
@@ -359,18 +465,27 @@ export default function App() {
         duration: leg.duration.text,
         avoided: avoidDanger ? highRisk.length - touchedInSelectedRoute.length : 0,
       })
-    } catch {
-      directionsRendererRef.current?.setMap(null)
-      setRouteError('Could not find a route. Please check both addresses.')
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Missing leg') {
+        directionsRendererRef.current?.setMap(null)
+        setRouteError('Could not find a route. Please check both addresses.')
+      } else {
+        setRouteError('Could not find a route. Please check both addresses.')
+      }
     } finally {
       setRouteLoading(false)
     }
-  }, [avoidDanger, destination, origin, safetyPriority, travelMode])
+  }, [avoidDanger, destination, origin, travelMode])
 
   const clearRoute = useCallback(() => {
     directionsRendererRef.current?.setMap(null)
+    originMarkerRef.current?.setMap(null)
+    destinationMarkerRef.current?.setMap(null)
+    originMarkerRef.current = null
+    destinationMarkerRef.current = null
     setRouteInfo(null)
     setRouteError('')
+    setMapPickMode(null)
     setOrigin('')
     setDestination('')
   }, [])
@@ -566,6 +681,43 @@ export default function App() {
                 placeholder="e.g. NDK, Sofia"
                 style={inputStyle}
               />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                <button
+                  onClick={() => setMapPickMode((current) => (current === 'origin' ? null : 'origin'))}
+                  style={{
+                    padding: '8px 0',
+                    borderRadius: 8,
+                    border: `1px solid ${mapPickMode === 'origin' ? 'rgba(59,109,17,0.55)' : 'rgba(255,255,255,0.1)'}`,
+                    background: mapPickMode === 'origin' ? 'rgba(59,109,17,0.2)' : 'rgba(255,255,255,0.04)',
+                    color: '#e8e4dc',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  Pick FROM on map
+                </button>
+                <button
+                  onClick={() => setMapPickMode((current) => (current === 'destination' ? null : 'destination'))}
+                  style={{
+                    padding: '8px 0',
+                    borderRadius: 8,
+                    border: `1px solid ${mapPickMode === 'destination' ? 'rgba(226,75,74,0.55)' : 'rgba(255,255,255,0.1)'}`,
+                    background: mapPickMode === 'destination' ? 'rgba(226,75,74,0.2)' : 'rgba(255,255,255,0.04)',
+                    color: '#e8e4dc',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  Pick TO on map
+                </button>
+              </div>
+              {mapPickMode ? (
+                <div style={{ marginTop: 8, fontSize: 10, color: 'rgba(232,228,220,0.55)' }}>
+                  Click the map to set {mapPickMode === 'origin' ? 'FROM' : 'TO'}.
+                </div>
+              ) : null}
               <label htmlFor="travel-mode" style={{ display: 'block', margin: '12px 0 6px', fontSize: 11, color: 'rgba(232,228,220,0.45)' }}>
                 TRAVEL MODE
               </label>
@@ -634,20 +786,9 @@ export default function App() {
                     border: '1px solid rgba(255,255,255,0.06)',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 11 }}>
-                    <span style={{ color: 'rgba(232,228,220,0.5)' }}>Speed</span>
-                    <span style={{ color: 'rgba(232,228,220,0.65)' }}>{`Safety priority: ${safetyPriority}%`}</span>
-                    <span style={{ color: 'rgba(232,228,220,0.5)' }}>Safety</span>
+                  <div style={{ color: 'rgba(232,228,220,0.72)', fontSize: 11, lineHeight: 1.5 }}>
+                    Hotspots are treated as a 50m no-go zone when Safe Route is on.
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={safetyPriority}
-                    onChange={(event) => setSafetyPriority(Number(event.target.value))}
-                    style={{ width: '100%' }}
-                  />
                 </div>
               ) : null}
               <button
