@@ -20,6 +20,8 @@ type RouteInfo = {
   avoided: number
 }
 
+type TravelMode = 'DRIVING' | 'WALKING'
+
 type LatLngLike = {
   lat(): number
   lng(): number
@@ -62,7 +64,7 @@ type GoogleMapsApi = {
     Marker: new (options: object) => MarkerLike
     LatLng: new (lat: number, lng: number) => object
     SymbolPath: { CIRCLE: object }
-    TravelMode: { DRIVING: string }
+    TravelMode: { DRIVING: string; WALKING: string }
     DirectionsService: new () => {
       route(options: object): Promise<DirectionsResultLike>
     }
@@ -164,6 +166,7 @@ export default function App() {
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
   const [origin, setOrigin] = useState('')
   const [destination, setDestination] = useState('')
+  const [travelMode, setTravelMode] = useState<TravelMode>('DRIVING')
   const [avoidDanger, setAvoidDanger] = useState(true)
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
   const [routeError, setRouteError] = useState('')
@@ -265,7 +268,7 @@ export default function App() {
       const result = await service.route({
         origin,
         destination,
-        travelMode: google.maps.TravelMode.DRIVING,
+        travelMode: google.maps.TravelMode[travelMode],
         provideRouteAlternatives: avoidDanger,
       })
 
@@ -362,7 +365,7 @@ export default function App() {
     } finally {
       setRouteLoading(false)
     }
-  }, [avoidDanger, destination, origin, safetyPriority])
+  }, [avoidDanger, destination, origin, safetyPriority, travelMode])
 
   const clearRoute = useCallback(() => {
     directionsRendererRef.current?.setMap(null)
@@ -563,6 +566,18 @@ export default function App() {
                 placeholder="e.g. NDK, Sofia"
                 style={inputStyle}
               />
+              <label htmlFor="travel-mode" style={{ display: 'block', margin: '12px 0 6px', fontSize: 11, color: 'rgba(232,228,220,0.45)' }}>
+                TRAVEL MODE
+              </label>
+              <select
+                id="travel-mode"
+                value={travelMode}
+                onChange={(event) => setTravelMode(event.target.value as TravelMode)}
+                style={inputStyle}
+              >
+                <option value="DRIVING" style={{ color: '#111' }}>Car</option>
+                <option value="WALKING" style={{ color: '#111' }}>Walking</option>
+              </select>
               <div
                 style={{
                   display: 'flex',
