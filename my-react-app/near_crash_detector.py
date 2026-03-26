@@ -40,9 +40,9 @@ from ultralytics import YOLO
 
 class Config:
     # Model
-    MODEL_WEIGHTS         = "yolov8n.pt"
-    CONFIDENCE_THRESHOLD  = 0.40
-    IOU_NMS_THRESHOLD     = 0.50
+    MODEL_WEIGHTS         = "yolo11x.pt"
+    CONFIDENCE_THRESHOLD  = 0.15
+    IOU_NMS_THRESHOLD     = 0.30
     DEVICE                = "cpu"          # "cuda" | "mps" | "cpu"
     TRACKER               = "bytetrack.yaml"
 
@@ -58,11 +58,11 @@ class Config:
     PROXIMITY_RATIO_THRESHOLD   = 0.60
 
     # ── Rule 2: Deceleration ─────────────────────────────────────────────
-    DECEL_THRESHOLD             = 8.0      # px / frame²  (negative accel)
+    DECEL_THRESHOLD             = 32.0      # px / frame²  (negative accel)
 
     # ── Rule 3: Trajectory convergence ───────────────────────────────────
-    CONVERGENCE_ANGLE_THRESHOLD = 25.0     # degrees
-    MIN_CLOSING_SPEED_PX        = 1.0      # px/frame  (must also be closing)
+    CONVERGENCE_ANGLE_THRESHOLD = 30.0     # degrees
+    MIN_CLOSING_SPEED_PX        = 5.0      # px/frame  (must also be closing)
 
     # ── Rule 4: Path deviation ────────────────────────────────────────────
     PATH_FIT_MIN_FRAMES         = 12       # need at least N frames to fit a line
