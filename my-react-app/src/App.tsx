@@ -517,11 +517,13 @@ export default function App() {
       <aside
         style={{
           width: 320,
+          height: '100vh',
           display: 'flex',
           flexDirection: 'column',
           background: '#141618',
           borderRight: '1px solid rgba(255,255,255,0.06)',
           flexShrink: 0,
+          overflow: 'hidden',
         }}
       >
         <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -593,7 +595,7 @@ export default function App() {
           ))}
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
           {tab === 'heatmap' ? (
             <>
               <div
