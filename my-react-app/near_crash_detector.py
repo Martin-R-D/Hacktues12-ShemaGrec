@@ -1,5 +1,5 @@
 """
-Near-Crash Detection System  v2.0
+Near-Crash Detection System  v2.1
 ===================================
 Rules:
   1. Bounding-box overlap  +  center-to-center proximity ratio
@@ -8,15 +8,18 @@ Rules:
   4. Path-deviation  — predicted lane vs actual position
   5. Non-vehicle objects (pedestrians, cyclists) rapidly closing on cars
 
-On trigger → publishes a structured JSON event (timestamp, location, cause, severity)
-to both stdout and an NDJSON log file so get_rankings.py can consume it.
+On completion → writes a JSON array of aggregated hotspots:
+    [ { "risk_weight": 12, "cord_x": 23.32, "cord_y": 42.69 }, ... ]
+
+If the output file already contains data, new results are merged in
+(existing locations within 50 m get their weight summed).
 
 Requirements:
     pip install ultralytics opencv-python numpy
 
 Usage:
-    python near_crash_detector.py --source path/to/video.mp4 --location "CAM_01|51.5074,-0.1278"
-    python near_crash_detector.py --source 0 --location "CAM_02|48.8566,2.3522" --save
+    python near_crash_detector.py --source path/to/video.mp4 --location "CAM_01|42.6977,23.3219"
+    python near_crash_detector.py --source 0 --location "CAM_02|42.6934,23.3189" --save
     python near_crash_detector.py --source video.mp4 --no-show --log-file events.ndjson
     python near_crash_detector.py --source video.mp4 --disable-factors overlap,converge
 """
@@ -24,6 +27,7 @@ Usage:
 import argparse
 import collections
 import json
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -39,17 +43,19 @@ from ultralytics import YOLO
 # Config
 # ---------------------------------------------------------------------------
 
-# If one box is much smaller than the other, IoU becomes less meaningful.
-# Use hard/soft cutoffs on smaller/larger area ratio to suppress it.
 SMALL_BOX_RATIO_HARD_CUTOFF = 0.20
 SMALL_BOX_RATIO_SOFT_CUTOFF = 0.45
 
+# Two hotspots within this distance (metres) are considered the same location.
+MERGE_RADIUS_M = 50.0
+
+
 class Config:
     # Model
-    MODEL_WEIGHTS         = "yolo11x.pt"
+    MODEL_WEIGHTS         = "yolov8m.pt"
     CONFIDENCE_THRESHOLD  = 0.15
     IOU_NMS_THRESHOLD     = 0.30
-    DEVICE                = "cpu"          # "cuda" | "mps" | "cpu"
+    DEVICE                = "cpu"
     TRACKER               = "bytetrack.yaml"
 
     # COCO class ids
@@ -63,26 +69,27 @@ class Config:
     IOU_ALERT_THRESHOLD         = 0.10
     PROXIMITY_RATIO_THRESHOLD   = 0.60
     ENABLE_OVERLAP_FACTOR       = False
-    ENABLE_PROXIMITY_FACTOR     = False
+    ENABLE_PROXIMITY_FACTOR     = True
 
     # ── Rule 2: Deceleration ─────────────────────────────────────────────
-    DECEL_THRESHOLD             = 32.0      # px / frame²  (negative accel)
-    ENABLE_DECEL_FACTOR         = False
+    DECEL_THRESHOLD             = 32.0
+    ENABLE_DECEL_FACTOR         = True
 
     # ── Rule 3: Trajectory convergence ───────────────────────────────────
-    CONVERGENCE_ANGLE_THRESHOLD = 30.0     # degrees
-    MIN_CLOSING_SPEED_PX        = 5.0      # px/frame  (must also be closing)
-    ENABLE_CONVERGENCE_FACTOR   = False
+    CONVERGENCE_ANGLE_THRESHOLD = 30.0
+    MIN_CLOSING_SPEED_PX        = 5.0
+    ENABLE_CONVERGENCE_FACTOR   = True
 
     # ── Rule 4: Path deviation ────────────────────────────────────────────
-    PATH_FIT_MIN_FRAMES         = 12       # need at least N frames to fit a line
-    PATH_DEVIATION_THRESHOLD    = 55.0     # px — how far off predicted line counts
-    ENABLE_PATH_DEVIATION       = True
+    PATH_FIT_MIN_FRAMES         = 12
+    PATH_DEVIATION_THRESHOLD    = 55.0
+    ENABLE_PATH_DEVIATION       = False
 
     # ── Rule 5: Non-vehicle proximity to cars ─────────────────────────────
-    NON_VEH_DISTANCE_DROP_RATIO = 0.40     # distance drops >40 % in N frames
-    NON_VEH_WINDOW_FRAMES       = 10       # look-back window for ratio test
-    NON_VEH_MAX_DIST_ABS        = 220.0    # only care if within 220 px of a car
+    NON_VEH_DISTANCE_DROP_RATIO = 0.40
+    NON_VEH_WINDOW_FRAMES       = 10
+    NON_VEH_MIN_ALERT_DIST_ABS  = 35.0
+    NON_VEH_MAX_DIST_ABS        = 220.0
     ENABLE_NONVEH_PROXIMITY     = False
 
     # Alert suppression
@@ -108,8 +115,6 @@ class TrackState:
     centers    : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
     boxes      : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
     velocities : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
-
-    # per-track deviation history (for rule 4 smoothing)
     recent_deviations: collections.deque = field(default_factory=lambda: collections.deque(maxlen=5))
 
     def update(self, box: Tuple):
@@ -122,8 +127,6 @@ class TrackState:
             self.velocities.append((0.0, 0.0))
         self.centers.append((cx, cy))
         self.boxes.append(box)
-
-    # ── Properties ──────────────────────────────────────────────────────
 
     @property
     def current_center(self) -> Optional[Tuple]:
@@ -154,7 +157,9 @@ class TrackState:
         recent = list(self.velocities)[-5:]
         avg_vx = float(np.mean([v[0] for v in recent]))
         avg_vy = float(np.mean([v[1] for v in recent]))
-        return float(np.degrees(np.arctan2(avg_vy, avg_vx))) if np.hypot(avg_vx, avg_vy) > 0.5 else None
+        if np.hypot(avg_vx, avg_vy) <= 0.5:
+            return None
+        return float(np.degrees(np.arctan2(avg_vy, avg_vx)))
 
     @property
     def diagonal(self) -> float:
@@ -168,13 +173,17 @@ class TrackState:
         return len(self.centers)
 
 
+# ---------------------------------------------------------------------------
+# Factor toggles
+# ---------------------------------------------------------------------------
+
 FACTOR_TO_ATTR = {
-    "overlap": "ENABLE_OVERLAP_FACTOR",
+    "overlap":   "ENABLE_OVERLAP_FACTOR",
     "proximity": "ENABLE_PROXIMITY_FACTOR",
-    "decel": "ENABLE_DECEL_FACTOR",
-    "converge": "ENABLE_CONVERGENCE_FACTOR",
-    "path": "ENABLE_PATH_DEVIATION",
-    "nonveh": "ENABLE_NONVEH_PROXIMITY",
+    "decel":     "ENABLE_DECEL_FACTOR",
+    "converge":  "ENABLE_CONVERGENCE_FACTOR",
+    "path":      "ENABLE_PATH_DEVIATION",
+    "nonveh":    "ENABLE_NONVEH_PROXIMITY",
 }
 
 
@@ -186,10 +195,10 @@ def _parse_factor_csv(value: str) -> List[str]:
 
 def apply_factor_toggles(disable_csv: str, enable_csv: str):
     disable_names = _parse_factor_csv(disable_csv)
-    enable_names = _parse_factor_csv(enable_csv)
+    enable_names  = _parse_factor_csv(enable_csv)
 
     def _validate(names: List[str], flag_name: str):
-        unknown = sorted(name for name in names if name not in FACTOR_TO_ATTR and name != "all")
+        unknown = sorted(n for n in names if n not in FACTOR_TO_ATTR and n != "all")
         if unknown:
             raise ValueError(
                 f"Unknown factor(s) in {flag_name}: {', '.join(unknown)}. "
@@ -197,7 +206,7 @@ def apply_factor_toggles(disable_csv: str, enable_csv: str):
             )
 
     _validate(disable_names, "--disable-factors")
-    _validate(enable_names, "--enable-factors")
+    _validate(enable_names,  "--enable-factors")
 
     if "all" in disable_names:
         for attr in FACTOR_TO_ATTR.values():
@@ -218,42 +227,51 @@ def active_factors() -> List[str]:
     return [name for name, attr in FACTOR_TO_ATTR.items() if getattr(Config, attr)]
 
 
+# ---------------------------------------------------------------------------
+# Internal event (kept for processing; never written directly to disk)
+# ---------------------------------------------------------------------------
+
 @dataclass
 class NearCrashEvent:
-    frame_idx        : int
-    timestamp_utc    : str
-    camera_id        : str
-    camera_lat       : float
-    camera_lon       : float
+    frame_idx         : int
+    timestamp_utc     : str
+    camera_id         : str
+    camera_lat        : float
+    camera_lon        : float
     involved_track_ids: List[int]
-    triggered_rules  : List[str]
-    severity         : str          # "WARNING" | "CRITICAL"
-    iou              : float
-    proximity_ratio  : float
-    ttc_seconds      : Optional[float]
+    triggered_rules   : List[str]
+    severity          : str          # "WARNING" | "CRITICAL"
+    iou               : float
+    proximity_ratio   : float
+    ttc_seconds       : Optional[float]
 
-    def to_dict(self) -> dict:
-        weight = 0
+    @property
+    def risk_weight(self) -> int:
+        """Per-event risk weight (higher = more dangerous)."""
+        w = 0
         rules_text = " ".join(self.triggered_rules).upper()
-        
-        # Base weights inferred from logic
-        if "NONVEH" in rules_text:
-            weight += 4
-        elif "CONVERGE" in rules_text:
-            weight += 5 if self.severity == "CRITICAL" else 2
-        elif "BRAKE" in rules_text:
-            weight += 2
-        else:
-            weight += 1
-            
-        if self.severity == "CRITICAL":
-            weight += 3
 
-        return {
-            "risk_weight": weight,
-            "cord_x": float(self.camera_lon),
-            "cord_y": float(self.camera_lat)
-        }
+        if "NONVEH" in rules_text:
+            w += 4
+        elif "CONVERGE" in rules_text:
+            w += 5 if self.severity == "CRITICAL" else 2
+        elif "BRAKE" in rules_text:
+            w += 3
+        elif "PATH_DEV" in rules_text:
+            w += 2
+        elif "OVERLAP" in rules_text or "PROXIMITY" in rules_text:
+            w += 2
+
+        if self.severity == "CRITICAL":
+            w += 3
+
+        # TTC bonus: events with very short TTC are more dangerous
+        if self.ttc_seconds is not None and self.ttc_seconds < 1.0:
+            w += 2
+        elif self.ttc_seconds is not None and self.ttc_seconds < 2.0:
+            w += 1
+
+        return max(1, w)
 
     def __str__(self):
         rules  = ", ".join(self.triggered_rules)
@@ -271,7 +289,6 @@ class NearCrashEvent:
 # ---------------------------------------------------------------------------
 
 def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
-
     xa1, ya1, xa2, ya2 = box_a
     xb1, yb1, xb2, yb2 = box_b
 
@@ -288,13 +305,12 @@ def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
     size_ratio = min(area_a, area_b) / max(area_a, area_b)
     if size_ratio <= SMALL_BOX_RATIO_HARD_CUTOFF:
         return 0.0
-
     if size_ratio < SMALL_BOX_RATIO_SOFT_CUTOFF:
-        weight = ((size_ratio - SMALL_BOX_RATIO_HARD_CUTOFF)
-                  / (SMALL_BOX_RATIO_SOFT_CUTOFF - SMALL_BOX_RATIO_HARD_CUTOFF))
-        return raw_iou * max(0.0, min(1.0, weight))
-
+        t = ((size_ratio - SMALL_BOX_RATIO_HARD_CUTOFF)
+             / (SMALL_BOX_RATIO_SOFT_CUTOFF - SMALL_BOX_RATIO_HARD_CUTOFF))
+        return raw_iou * max(0.0, min(1.0, t))
     return raw_iou
+
 
 def center_distance(a: TrackState, b: TrackState) -> float:
     ca, cb = a.current_center, b.current_center
@@ -304,7 +320,6 @@ def center_distance(a: TrackState, b: TrackState) -> float:
 
 
 def closing_speed(a: TrackState, b: TrackState) -> float:
-    """Positive = approaching each other (px / frame)."""
     n = min(len(a.centers), len(b.centers))
     if n < 3:
         return 0.0
@@ -312,12 +327,12 @@ def closing_speed(a: TrackState, b: TrackState) -> float:
     cb = list(b.centers)[-n:]
     dists = [np.hypot(ca[i][0] - cb[i][0], ca[i][1] - cb[i][1]) for i in range(n)]
     slope = float(np.polyfit(range(n), dists, 1)[0])
-    return -slope   # negative slope = closing
+    return -slope
 
 
 def compute_ttc(a: TrackState, b: TrackState, fps: float) -> Optional[float]:
-    dist  = center_distance(a, b)
-    cspd  = closing_speed(a, b)
+    dist = center_distance(a, b)
+    cspd = closing_speed(a, b)
     if cspd <= 0.5:
         return None
     return (dist / cspd) / fps
@@ -330,27 +345,20 @@ def proximity_ratio(a: TrackState, b: TrackState) -> float:
 
 
 def path_deviation(track: TrackState) -> Optional[float]:
-    """
-    Fit a line through the N-2 oldest centers, measure how far the
-    most recent center lies from that line.  Returns px deviation or None.
-    """
     n = len(track.centers)
     if n < Config.PATH_FIT_MIN_FRAMES:
         return None
     pts = np.array(list(track.centers))
-    # Fit on all but the last 3 points, measure deviation of the last 3
     fit_pts = pts[:-3]
     test_pt = pts[-1]
     if len(fit_pts) < 2:
         return None
-    # Parametric line via PCA (handles vertical lines)
     mean = fit_pts.mean(axis=0)
     centered = fit_pts - mean
     _, _, vt = np.linalg.svd(centered)
-    direction = vt[0]          # principal direction
+    direction = vt[0]
     normal = np.array([-direction[1], direction[0]])
-    deviation = float(abs(np.dot(test_pt - mean, normal)))
-    return deviation
+    return float(abs(np.dot(test_pt - mean, normal)))
 
 
 # ---------------------------------------------------------------------------
@@ -362,48 +370,41 @@ def evaluate_vehicle_pair(
     t_b: TrackState,
     fps: float,
 ) -> Tuple[List[str], float, float, Optional[float]]:
-    """Rules 1, 2, 3 for a vehicle–vehicle pair."""
     triggered: List[str] = []
 
-    iou   = compute_iou(t_a.current_box, t_b.current_box)
-    prox  = proximity_ratio(t_a, t_b)
-    ttc   = compute_ttc(t_a, t_b, fps)
+    iou  = compute_iou(t_a.current_box, t_b.current_box)
+    prox = proximity_ratio(t_a, t_b)
+    ttc  = compute_ttc(t_a, t_b, fps)
 
-    # Rule 1a — Box overlap
     if Config.ENABLE_OVERLAP_FACTOR and iou >= Config.IOU_ALERT_THRESHOLD:
         triggered.append(f"OVERLAP(IoU={iou:.2f})")
 
-    # Rule 1b — Proximity ratio
     if Config.ENABLE_PROXIMITY_FACTOR and prox < Config.PROXIMITY_RATIO_THRESHOLD:
         triggered.append(f"PROXIMITY(ratio={prox:.2f})")
 
-    # Rule 2 — Sudden deceleration (either vehicle)
     if Config.ENABLE_DECEL_FACTOR:
         for t, label in [(t_a, "A"), (t_b, "B")]:
             if t.acceleration < -Config.DECEL_THRESHOLD:
-                triggered.append(f"BRAKE_{label}(Δ={t.acceleration:.1f}px/f²)")
+                triggered.append(f"BRAKE_{label}(decel={t.acceleration:.1f}px/f2)")
 
-    # Rule 3 — Trajectory convergence
     if Config.ENABLE_CONVERGENCE_FACTOR:
         ha, hb = t_a.heading, t_b.heading
         if ha is not None and hb is not None:
             angle_diff = abs((ha - hb + 180) % 360 - 180)
             cspd = closing_speed(t_a, t_b)
             if angle_diff < Config.CONVERGENCE_ANGLE_THRESHOLD and cspd > Config.MIN_CLOSING_SPEED_PX:
-                triggered.append(f"CONVERGE(Δangle={angle_diff:.0f}°,cspd={cspd:.1f})")
+                triggered.append(f"CONVERGE(angle={angle_diff:.0f}deg,cspd={cspd:.1f})")
 
     return triggered, iou, prox, ttc
 
 
 def evaluate_path_deviation(track: TrackState) -> List[str]:
-    """Rule 4 — single-vehicle path deviation."""
     if not Config.ENABLE_PATH_DEVIATION:
         return []
     dev = path_deviation(track)
     if dev is None:
         return []
     track.recent_deviations.append(dev)
-    # Require 3 consecutive high-deviation frames to reduce noise
     if (len(track.recent_deviations) >= 3
             and sum(1 for d in track.recent_deviations if d > Config.PATH_DEVIATION_THRESHOLD) >= 3):
         return [f"PATH_DEV(dev={dev:.0f}px)"]
@@ -414,37 +415,35 @@ def evaluate_nonvehicle_proximity(
     nonveh: TrackState,
     car: TrackState,
 ) -> List[str]:
-    """Rule 5 — pedestrian / cyclist closing on a car rapidly."""
     if not Config.ENABLE_NONVEH_PROXIMITY:
         return []
-    triggered: List[str] = []
+
     n = min(len(nonveh.centers), len(car.centers), Config.NON_VEH_WINDOW_FRAMES)
     if n < 4:
-        return triggered
+        return []
 
     dist_now = center_distance(nonveh, car)
+    if dist_now < Config.NON_VEH_MIN_ALERT_DIST_ABS:
+        return []
     if dist_now > Config.NON_VEH_MAX_DIST_ABS:
-        return triggered
+        return []
 
-    # Distance N frames ago
     cn_old = list(nonveh.centers)[-n]
     cc_old = list(car.centers)[-n]
     dist_old = float(np.hypot(cn_old[0] - cc_old[0], cn_old[1] - cc_old[1]))
-
     if dist_old < 1.0:
-        return triggered
+        return []
 
-    ratio = (dist_old - dist_now) / dist_old   # positive = closed in
-    if ratio > Config.NON_VEH_DISTANCE_DROP_RATIO:
-        label = "PERSON" if nonveh.class_id == 0 else "CYCLIST"
-        triggered.append(f"NONVEH_{label}_CLOSE(Δ={ratio*100:.0f}%,d={dist_now:.0f}px)")
+    closed_ratio = (dist_old - dist_now) / dist_old
+    if closed_ratio <= Config.NON_VEH_DISTANCE_DROP_RATIO:
+        return []
 
-    return triggered
+    label = "PERSON" if nonveh.class_id == 0 else "CYCLIST"
+    return [f"NONVEH_{label}_CLOSE(drop={closed_ratio*100:.0f}%,d={dist_now:.0f}px)"]
 
 
 # ---------------------------------------------------------------------------
-# Numpy-safe JSON encoder  (int64 / float32 etc. from YOLO are not serialisable
-# by the stdlib encoder; this subclass handles them transparently)
+# Numpy-safe JSON encoder
 # ---------------------------------------------------------------------------
 
 class _NumpyEncoder(json.JSONEncoder):
@@ -459,7 +458,77 @@ class _NumpyEncoder(json.JSONEncoder):
 
 
 # ---------------------------------------------------------------------------
-# Event publisher
+# Hotspot aggregation + file I/O
+# ---------------------------------------------------------------------------
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in metres between two GPS points."""
+    R = 6_371_000
+    to_rad = math.radians
+    dLat = to_rad(lat2 - lat1)
+    dLon = to_rad(lon2 - lon1)
+    a = (math.sin(dLat / 2) ** 2
+         + math.cos(to_rad(lat1)) * math.cos(to_rad(lat2)) * math.sin(dLon / 2) ** 2)
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def _load_existing_hotspots(path: str) -> List[dict]:
+    """Try to load the existing JSON array from the output file."""
+    try:
+        text = Path(path).read_text(encoding="utf-8").strip()
+        if not text:
+            return []
+        # The file might have NDJSON junk appended after the array.
+        # Find the end of the first JSON array.
+        if text.startswith("["):
+            depth = 0
+            end = 0
+            for i, ch in enumerate(text):
+                if ch == "[":
+                    depth += 1
+                elif ch == "]":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            if end > 0:
+                return json.loads(text[:end])
+        return []
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return []
+
+
+def _merge_hotspot(existing: List[dict], lat: float, lon: float, weight: int) -> List[dict]:
+    """
+    Merge a new hotspot into the list. If an existing entry is within
+    MERGE_RADIUS_M, add the weight to it. Otherwise append a new entry.
+    """
+    for entry in existing:
+        e_lat = entry.get("cord_y", 0.0)
+        e_lon = entry.get("cord_x", 0.0)
+        if _haversine_m(lat, lon, e_lat, e_lon) <= MERGE_RADIUS_M:
+            entry["risk_weight"] = entry.get("risk_weight", 0) + weight
+            return existing
+
+    existing.append({
+        "risk_weight": weight,
+        "cord_x": round(lon, 7),
+        "cord_y": round(lat, 7),
+    })
+    return existing
+
+
+def write_hotspots(path: str, hotspots: List[dict]):
+    """Write the hotspot array as pretty JSON, sorted by weight descending."""
+    hotspots.sort(key=lambda h: h.get("risk_weight", 0), reverse=True)
+    Path(path).write_text(
+        json.dumps(hotspots, indent=2, cls=_NumpyEncoder) + "\n",
+        encoding="utf-8",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Event publisher  (prints to console during run; writes file on close)
 # ---------------------------------------------------------------------------
 
 class EventPublisher:
@@ -467,17 +536,27 @@ class EventPublisher:
         self.camera_id = camera_id
         self.lat       = lat
         self.lon       = lon
-        self._fp       = open(log_path, "a", encoding="utf-8") if log_path else None
+        self.log_path  = log_path
+        self.events: List[NearCrashEvent] = []
 
     def publish(self, evt: NearCrashEvent):
-        print(f"  🚨 EVENT  {evt}")
-        if self._fp:
-            self._fp.write(json.dumps(evt.to_dict(), cls=_NumpyEncoder) + "\n")
-            self._fp.flush()
+        print(f"  EVENT  {evt}")
+        self.events.append(evt)
 
     def close(self):
-        if self._fp:
-            self._fp.close()
+        if not self.log_path:
+            return
+
+        # Aggregate all events from this run into a single weight for this camera.
+        total_weight = sum(e.risk_weight for e in self.events)
+        if total_weight == 0:
+            return
+
+        # Load existing data, merge, write back.
+        hotspots = _load_existing_hotspots(self.log_path)
+        _merge_hotspot(hotspots, self.lat, self.lon, total_weight)
+        write_hotspots(self.log_path, hotspots)
+        print(f"[INFO] Wrote {len(hotspots)} hotspot(s) to {self.log_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -499,7 +578,7 @@ class NearCrashDetector:
         self.show        = show
         self.save_output = save_output
 
-        print(f"[INFO] Loading {Config.MODEL_WEIGHTS}…")
+        print(f"[INFO] Loading {Config.MODEL_WEIGHTS}...")
         self.model = YOLO(Config.MODEL_WEIGHTS)
 
         self.tracks         : Dict[int, TrackState]       = {}
@@ -523,12 +602,11 @@ class NearCrashDetector:
             out_path = f"{stem}_near_crash.mp4"
             self.writer = cv2.VideoWriter(
                 out_path, cv2.VideoWriter_fourcc(*"mp4v"),
-                self.fps, (self.width, self.height)
+                self.fps, (self.width, self.height),
             )
-            print(f"[INFO] Saving output → {out_path}")
+            print(f"[INFO] Saving output -> {out_path}")
 
-        # Running stats for get_rankings consumer
-        self.total_vehicles_seen: set = set()   # track IDs (unique vehicles)
+        self.total_vehicles_seen: set = set()
 
     # ── Main loop ─────────────────────────────────────────────────────────
 
@@ -536,7 +614,7 @@ class NearCrashDetector:
         print(f"[INFO] Camera: {self.publisher.camera_id}  "
               f"({self.publisher.lat},{self.publisher.lon})")
         print(f"[INFO] Active factors: {', '.join(active_factors()) or 'none'}")
-        print("[INFO] Running … press 'q' to quit.")
+        print("[INFO] Running ... press 'q' to quit.")
         t0 = time.time()
 
         while True:
@@ -554,7 +632,7 @@ class NearCrashDetector:
 
         elapsed = time.time() - t0
         print(f"\n[INFO] {self.frame_idx} frames in {elapsed:.1f}s "
-              f"({self.frame_idx/elapsed:.1f} FPS avg)")
+              f"({self.frame_idx / max(elapsed, 0.001):.1f} FPS avg)")
         self._print_summary()
         self._cleanup()
 
@@ -574,7 +652,6 @@ class NearCrashDetector:
             verbose   = False,
         )
 
-        # Update tracks
         active_ids: set = set()
         if results[0].boxes is not None and results[0].boxes.id is not None:
             boxes = results[0].boxes.xyxy.cpu().numpy()
@@ -592,7 +669,6 @@ class NearCrashDetector:
 
         frame_events: List[NearCrashEvent] = []
 
-        # Filter by minimum frames
         active_veh = [
             tid for tid in active_ids
             if tid in self.tracks
@@ -634,14 +710,13 @@ class NearCrashDetector:
                     pair_key = (tid, -1)
                     if self.frame_idx - self.alert_cooldowns.get(pair_key, -999) < Config.ALERT_COOLDOWN_FRAMES:
                         continue
-                    evt = self._make_event([tid], path_triggers, 0.0,
-                                           proximity_ratio(t, t) if False else 0.0, None)
+                    evt = self._make_event([tid], path_triggers, 0.0, 0.0, None)
                     frame_events.append(evt)
                     self.events.append(evt)
                     self.alert_cooldowns[pair_key] = self.frame_idx
                     self.publisher.publish(evt)
 
-        # ── Rule 5  (non-vehicle → car proximity) ─────────────────────
+        # ── Rule 5  (non-vehicle -> car proximity) ────────────────────
         if Config.ENABLE_NONVEH_PROXIMITY:
             for nv_id in active_nonveh:
                 nv = self.tracks[nv_id]
@@ -674,17 +749,17 @@ class NearCrashDetector:
     ) -> NearCrashEvent:
         severity = "CRITICAL" if len(triggered) >= 2 else "WARNING"
         return NearCrashEvent(
-            frame_idx         = self.frame_idx,
-            timestamp_utc     = datetime.now(timezone.utc).isoformat(),
-            camera_id         = self.publisher.camera_id,
-            camera_lat        = self.publisher.lat,
-            camera_lon        = self.publisher.lon,
-            involved_track_ids= track_ids,
-            triggered_rules   = triggered,
-            severity          = severity,
-            iou               = iou,
-            proximity_ratio   = prox,
-            ttc_seconds       = ttc,
+            frame_idx          = self.frame_idx,
+            timestamp_utc      = datetime.now(timezone.utc).isoformat(),
+            camera_id          = self.publisher.camera_id,
+            camera_lat         = self.publisher.lat,
+            camera_lon         = self.publisher.lon,
+            involved_track_ids = track_ids,
+            triggered_rules    = triggered,
+            severity           = severity,
+            iou                = iou,
+            proximity_ratio    = prox,
+            ttc_seconds        = ttc,
         )
 
     # ── Annotation ────────────────────────────────────────────────────────
@@ -714,7 +789,7 @@ class NearCrashDetector:
             elif is_vehicle:
                 color = (0, 210, 60)
             else:
-                color = (255, 165, 0)     # orange for pedestrians/cyclists
+                color = (255, 165, 0)
 
             thick = 3 if is_alert else 2
             cv2.rectangle(out, (x1, y1), (x2, y2), color, thick)
@@ -724,7 +799,6 @@ class NearCrashDetector:
                 label += f" {t.speed:.1f}px/f"
             cv2.putText(out, label, (x1, y1 - 7), Config.FONT, 0.52, color, thick)
 
-            # Trajectory tail
             if Config.SHOW_TRACKS and len(t.centers) > 1:
                 pts = np.array(list(t.centers), dtype=np.int32)
                 for k in range(1, len(pts)):
@@ -732,13 +806,12 @@ class NearCrashDetector:
                     c = tuple(int(v * alpha) for v in color)
                     cv2.line(out, tuple(pts[k-1]), tuple(pts[k]), c, 1)
 
-            # Path deviation: draw predicted line extension
             dev = path_deviation(t) if Config.ENABLE_PATH_DEVIATION else None
             if dev is not None and dev > Config.PATH_DEVIATION_THRESHOLD * 0.7:
                 n_fit = len(t.centers)
                 if n_fit >= Config.PATH_FIT_MIN_FRAMES:
-                    pts_arr = np.array(list(t.centers))
-                    mean    = pts_arr[:-3].mean(axis=0)
+                    pts_arr  = np.array(list(t.centers))
+                    mean     = pts_arr[:-3].mean(axis=0)
                     centered = pts_arr[:-3] - mean
                     _, _, vt = np.linalg.svd(centered)
                     direction = vt[0]
@@ -748,7 +821,6 @@ class NearCrashDetector:
                     cv2.putText(out, f"dev {dev:.0f}px", (x1, y2 + 14),
                                 Config.FONT, 0.45, (0, 200, 255), 1)
 
-        # Event banners
         for idx, evt in enumerate(events):
             for tid in evt.involved_track_ids:
                 if tid not in self.tracks or not self.tracks[tid].current_box:
@@ -772,8 +844,9 @@ class NearCrashDetector:
     # ── Summary + cleanup ─────────────────────────────────────────────────
 
     def _print_summary(self):
+        total_weight = sum(e.risk_weight for e in self.events)
         print("\n" + "=" * 65)
-        print(f"SUMMARY — {self.publisher.camera_id}  "
+        print(f"SUMMARY  {self.publisher.camera_id}  "
               f"({self.publisher.lat},{self.publisher.lon})")
         print(f"  Frames processed : {self.frame_idx}")
         print(f"  Unique vehicles  : {len(self.total_vehicles_seen)}")
@@ -782,6 +855,7 @@ class NearCrashDetector:
         warn = sum(1 for e in self.events if e.severity == "WARNING")
         print(f"    CRITICAL       : {crit}")
         print(f"    WARNING        : {warn}")
+        print(f"  Total risk_weight: {total_weight}")
         print("=" * 65)
 
     def _cleanup(self):
@@ -797,23 +871,23 @@ class NearCrashDetector:
 # ---------------------------------------------------------------------------
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Near-Crash Detector v2.0")
+    p = argparse.ArgumentParser(description="Near-Crash Detector v2.1")
     p.add_argument("--source",    required=True,
                    help="Video file, image dir, or '0' for webcam")
     p.add_argument("--location",  default="CAM_00|0.0,0.0",
-                   help="Camera label and GPS: 'CAM_01|51.5074,-0.1278'")
+                   help="Camera label and GPS: 'CAM_01|42.6977,23.3219'")
     p.add_argument("--log-file",  default="events.ndjson",
-                   help="Path to NDJSON event log (appended to)")
+                   help="Path to output JSON file (merged on each run)")
     p.add_argument("--save",      action="store_true",
                    help="Save annotated output video")
     p.add_argument("--no-show",   action="store_true",
-                help="Disable live window (headless)")
+                   help="Disable live window (headless)")
     p.add_argument("--disable-factors", default="",
-                help=("Comma-separated factors to disable: "
-                    "overlap,proximity,decel,converge,path,nonveh,all"))
+                   help=("Comma-separated factors to disable: "
+                         "overlap,proximity,decel,converge,path,nonveh,all"))
     p.add_argument("--enable-factors", default="",
-                help=("Comma-separated factors to enable (applied after disables): "
-                    "overlap,proximity,decel,converge,path,nonveh,all"))
+                   help=("Comma-separated factors to enable (applied after disables): "
+                         "overlap,proximity,decel,converge,path,nonveh,all"))
     return p.parse_args()
 
 
