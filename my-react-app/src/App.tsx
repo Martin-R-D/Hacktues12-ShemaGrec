@@ -3,11 +3,14 @@ import type { CSSProperties } from 'react'
 
 type Severity = 'high' | 'medium' | 'low'
 
-type Incident = {
-  id: number
+type IncidentEvent = {
   lat: number
   lng: number
   weight: number
+}
+
+type Incident = IncidentEvent & {
+  id: number
   severity: Severity
   location: string
   count: number
@@ -87,15 +90,15 @@ type GoogleMapsApi = {
 const GOOGLE_MAPS_API_KEY =
   import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? 'AIzaSyCLgzXOx7SL0WDyTvSEzC3ui33lz3rlqy4'
 
-const INCIDENTS: Incident[] = [
-  { id: 1, lat: 42.6977, lng: 23.3219, weight: 10, severity: 'high', location: 'Tsarigradsko Shose Blvd & Tsanko Tserkovski St', count: 5, camera: 'CAM-04' },
-  { id: 2, lat: 42.6934, lng: 23.3189, weight: 8, severity: 'high', location: 'Vitosha Blvd & Positano St', count: 3, camera: 'CAM-07' },
-  { id: 3, lat: 42.7008, lng: 23.3301, weight: 5, severity: 'medium', location: 'Patriarch Evtimiy Blvd & Rakovski St', count: 2, camera: 'CAM-12' },
-  { id: 4, lat: 42.6951, lng: 23.3105, weight: 4, severity: 'medium', location: 'Opalchenska St & Odrin St', count: 1, camera: 'CAM-09' },
-  { id: 5, lat: 42.7055, lng: 23.3268, weight: 3, severity: 'low', location: 'Hristo Botev Blvd & Pirotska St', count: 1, camera: 'CAM-02' },
-  { id: 6, lat: 42.6899, lng: 23.335, weight: 7, severity: 'high', location: 'Bulgaria Blvd & Todor Kableshkov Blvd', count: 4, camera: 'CAM-11' },
-  { id: 7, lat: 42.708, lng: 23.315, weight: 3, severity: 'low', location: 'Stefan Stambolov Blvd & Exarch Yosif St', count: 1, camera: 'CAM-03' },
-  { id: 8, lat: 42.692, lng: 23.342, weight: 6, severity: 'medium', location: 'Cherni Vrah Blvd & Simeonovsko Shose', count: 2, camera: 'CAM-08' },
+const INCIDENTS: IncidentEvent[] = [
+  { lat: 42.6977, lng: 23.3219, weight: 10 },
+  { lat: 42.6934, lng: 23.3189, weight: 8 },
+  { lat: 42.7008, lng: 23.3301, weight: 5 },
+  { lat: 42.6951, lng: 23.3105, weight: 4 },
+  { lat: 42.7055, lng: 23.3268, weight: 3 },
+  { lat: 42.6899, lng: 23.335, weight: 7 },
+  { lat: 42.708, lng: 23.315, weight: 3 },
+  { lat: 42.692, lng: 23.342, weight: 6 },
 ]
 
 const SEVERITY_META: Record<Severity, { color: string; label: string }> = {
@@ -149,6 +152,12 @@ function parseLatLngInput(value: string) {
   return { lat, lng }
 }
 
+function severityFromWeight(weight: number): Severity {
+  if (weight >= 7) return 'high'
+  if (weight >= 4) return 'medium'
+  return 'low'
+}
+
 function useGoogleMaps(apiKey: string) {
   const [loaded, setLoaded] = useState(() => Boolean(getGoogle()?.maps))
 
@@ -199,8 +208,21 @@ export default function App() {
   const [mapPickMode, setMapPickMode] = useState<'origin' | 'destination' | null>(null)
   const [tab, setTab] = useState<'heatmap' | 'route'>('heatmap')
 
-  const sortedIncidents = useMemo(() => [...INCIDENTS].sort((a, b) => b.weight - a.weight), [])
-  const highRiskCount = useMemo(() => INCIDENTS.filter((item) => item.severity === 'high').length, [])
+  const incidents = useMemo<Incident[]>(
+    () =>
+      INCIDENTS.map((event, index) => ({
+        ...event,
+        id: index + 1,
+        severity: severityFromWeight(event.weight),
+        location: `Hotspot ${index + 1}`,
+        count: Math.max(1, Math.round(event.weight / 2)),
+        camera: `CAM-${String(index + 1).padStart(2, '0')}`,
+      })),
+    [],
+  )
+
+  const sortedIncidents = useMemo(() => [...incidents].sort((a, b) => b.weight - a.weight), [incidents])
+  const highRiskCount = useMemo(() => incidents.filter((item) => item.severity === 'high').length, [incidents])
 
   const addMarkers = useCallback((map: GoogleMapLike) => {
     const google = getGoogle()
@@ -209,7 +231,7 @@ export default function App() {
     markersRef.current.forEach((marker) => marker.setMap(null))
     markersRef.current = []
 
-    INCIDENTS.forEach((incident) => {
+    incidents.forEach((incident) => {
       const marker = new google.maps.Marker({
         position: { lat: incident.lat, lng: incident.lng },
         map,
@@ -227,7 +249,7 @@ export default function App() {
       marker.addListener('click', () => setSelectedIncident(incident))
       markersRef.current.push(marker)
     })
-  }, [])
+  }, [incidents])
 
   const placeRoutePointMarker = useCallback((kind: 'origin' | 'destination', coords: { lat: number; lng: number }) => {
     const google = getGoogle()
@@ -362,7 +384,7 @@ export default function App() {
     setRouteError('')
     setRouteInfo(null)
 
-    const highRisk = INCIDENTS.filter((item) => item.severity === 'high')
+    const highRisk = incidents.filter((item) => item.severity === 'high')
     const service = new google.maps.DirectionsService()
     const hotspotRadiusMeters = 50
 
@@ -475,7 +497,7 @@ export default function App() {
     } finally {
       setRouteLoading(false)
     }
-  }, [avoidDanger, destination, origin, travelMode])
+  }, [avoidDanger, destination, incidents, origin, travelMode])
 
   const clearRoute = useCallback(() => {
     directionsRendererRef.current?.setMap(null)
@@ -541,7 +563,7 @@ export default function App() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'rgba(255,255,255,0.04)' }}>
           {(['high', 'medium', 'low'] as const).map((severity) => {
-            const value = INCIDENTS.filter((item) => item.severity === severity).length
+            const value = incidents.filter((item) => item.severity === severity).length
             return (
               <div key={severity} style={{ padding: '12px 0', textAlign: 'center', background: '#141618' }}>
                 <div style={{ fontSize: 20, fontWeight: 700, color: SEVERITY_META[severity].color }}>{value}</div>
