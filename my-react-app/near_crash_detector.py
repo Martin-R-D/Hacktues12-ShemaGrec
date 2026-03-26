@@ -172,17 +172,17 @@ class NearCrashEvent:
 
     def to_dict(self) -> dict:
         return {
-            "frame"            : self.frame_idx,
+            "frame"            : int(self.frame_idx),
             "timestamp_utc"    : self.timestamp_utc,
             "camera_id"        : self.camera_id,
-            "camera_lat"       : self.camera_lat,
-            "camera_lon"       : self.camera_lon,
-            "involved_tracks"  : self.involved_track_ids,
+            "camera_lat"       : float(self.camera_lat),
+            "camera_lon"       : float(self.camera_lon),
+            "involved_tracks"  : [int(t) for t in self.involved_track_ids],
             "triggered_rules"  : self.triggered_rules,
             "severity"         : self.severity,
-            "iou"              : round(self.iou, 4),
-            "proximity_ratio"  : round(self.proximity_ratio, 4),
-            "ttc_seconds"      : round(self.ttc_seconds, 3) if self.ttc_seconds is not None else None,
+            "iou"              : round(float(self.iou), 4),
+            "proximity_ratio"  : round(float(self.proximity_ratio), 4),
+            "ttc_seconds"      : round(float(self.ttc_seconds), 3) if self.ttc_seconds is not None else None,
         }
 
     def __str__(self):
@@ -352,6 +352,22 @@ def evaluate_nonvehicle_proximity(
 
 
 # ---------------------------------------------------------------------------
+# Numpy-safe JSON encoder  (int64 / float32 etc. from YOLO are not serialisable
+# by the stdlib encoder; this subclass handles them transparently)
+# ---------------------------------------------------------------------------
+
+class _NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
+# ---------------------------------------------------------------------------
 # Event publisher
 # ---------------------------------------------------------------------------
 
@@ -365,7 +381,7 @@ class EventPublisher:
     def publish(self, evt: NearCrashEvent):
         print(f"  🚨 EVENT  {evt}")
         if self._fp:
-            self._fp.write(json.dumps(evt.to_dict()) + "\n")
+            self._fp.write(json.dumps(evt.to_dict(), cls=_NumpyEncoder) + "\n")
             self._fp.flush()
 
     def close(self):
