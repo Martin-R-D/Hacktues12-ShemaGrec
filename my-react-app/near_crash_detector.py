@@ -171,18 +171,26 @@ class NearCrashEvent:
     ttc_seconds      : Optional[float]
 
     def to_dict(self) -> dict:
+        weight = 0
+        rules_text = " ".join(self.triggered_rules).upper()
+        
+        # Base weights inferred from logic
+        if "NONVEH" in rules_text:
+            weight += 4
+        elif "CONVERGE" in rules_text:
+            weight += 5 if self.severity == "CRITICAL" else 2
+        elif "BRAKE" in rules_text:
+            weight += 2
+        else:
+            weight += 1
+            
+        if self.severity == "CRITICAL":
+            weight += 3
+
         return {
-            "frame"            : int(self.frame_idx),
-            "timestamp_utc"    : self.timestamp_utc,
-            "camera_id"        : self.camera_id,
-            "camera_lat"       : float(self.camera_lat),
-            "camera_lon"       : float(self.camera_lon),
-            "involved_tracks"  : [int(t) for t in self.involved_track_ids],
-            "triggered_rules"  : self.triggered_rules,
-            "severity"         : self.severity,
-            "iou"              : round(float(self.iou), 4),
-            "proximity_ratio"  : round(float(self.proximity_ratio), 4),
-            "ttc_seconds"      : round(float(self.ttc_seconds), 3) if self.ttc_seconds is not None else None,
+            "risk_weight": weight,
+            "cord_x": float(self.camera_lon),
+            "cord_y": float(self.camera_lat)
         }
 
     def __str__(self):
