@@ -7,6 +7,7 @@ from models import TrackState
 from geometry import (
     compute_iou, proximity_ratio, compute_ttc,
     closing_speed, center_distance, path_deviation,
+    is_calibrated,
 )
 
 
@@ -95,7 +96,8 @@ def evaluate_vehicle_pair(
         if ha is not None and hb is not None:
             angle_diff = abs((ha - hb + 180) % 360 - 180)
             cspd = closing_speed(t_a, t_b)
-            if angle_diff < Config.CONVERGENCE_ANGLE_THRESHOLD and cspd > Config.MIN_CLOSING_SPEED_PX:
+            min_cspd = Config.MIN_CLOSING_SPEED_MS if is_calibrated() else Config.MIN_CLOSING_SPEED_PX
+            if angle_diff < Config.CONVERGENCE_ANGLE_THRESHOLD and cspd > min_cspd:
                 triggered.append(f"CONVERGE(angle={angle_diff:.0f}deg,cspd={cspd:.1f})")
 
     return triggered, iou, prox, ttc

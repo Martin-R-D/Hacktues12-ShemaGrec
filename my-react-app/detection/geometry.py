@@ -1,9 +1,43 @@
 from typing import Optional, Tuple
 
+import cv2
 import numpy as np
 
 from config import Config, SMALL_BOX_RATIO_HARD_CUTOFF, SMALL_BOX_RATIO_SOFT_CUTOFF
 from models import TrackState
+
+
+# ---------------------------------------------------------------------------
+# Bird's-eye homography (optional — pixel-space fallback when not set)
+# ---------------------------------------------------------------------------
+
+class Homography:
+    def __init__(self, pixel_pts, world_pts):
+        src = np.float32(pixel_pts)
+        dst = np.float32(world_pts)
+        self.M = cv2.getPerspectiveTransform(src, dst)
+
+    def transform(self, x: float, y: float) -> Tuple[float, float]:
+        pt = np.array([[[x, y]]], dtype=np.float32)
+        out = cv2.perspectiveTransform(pt, self.M)
+        return float(out[0, 0, 0]), float(out[0, 0, 1])
+
+
+_H: Optional[Homography] = None
+
+
+def set_homography(h: Optional[Homography]) -> None:
+    global _H
+    _H = h
+
+
+def is_calibrated() -> bool:
+    return _H is not None
+
+
+def _to_world(x: float, y: float) -> Tuple[float, float]:
+    """Transform pixel coords to world coords (metres), or return as-is."""
+    return _H.transform(x, y) if _H else (x, y)
 
 
 def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
@@ -34,7 +68,8 @@ def center_distance(a: TrackState, b: TrackState) -> float:
     ca, cb = a.current_center, b.current_center
     if ca is None or cb is None:
         return float("inf")
-    return float(np.hypot(ca[0] - cb[0], ca[1] - cb[1]))
+    wa, wb = _to_world(*ca), _to_world(*cb)
+    return float(np.hypot(wa[0] - wb[0], wa[1] - wb[1]))
 
 
 def closing_speed(a: TrackState, b: TrackState) -> float:
@@ -43,7 +78,10 @@ def closing_speed(a: TrackState, b: TrackState) -> float:
         return 0.0
     ca = list(a.centers)[-n:]
     cb = list(b.centers)[-n:]
-    dists = [np.hypot(ca[i][0] - cb[i][0], ca[i][1] - cb[i][1]) for i in range(n)]
+    dists = [
+        np.hypot(*( np.array(_to_world(*ca[i])) - np.array(_to_world(*cb[i])) ))
+        for i in range(n)
+    ]
     slope = float(np.polyfit(range(n), dists, 1)[0])
     return -slope
 

@@ -11,8 +11,8 @@ class Config:
     MODEL_WEIGHTS         = "yolov8m.pt"
     CONFIDENCE_THRESHOLD  = 0.15
     IOU_NMS_THRESHOLD     = 0.30
-    DEVICE                = "cpu"
-    TRACKER               = "bytetrack.yaml"
+    DEVICE                = "cuda" if __import__("torch").cuda.is_available() else "cpu"
+    TRACKER               = "botsort.yaml"
 
     # COCO class ids
     VEHICLE_CLASS_IDS     = {2, 3, 5, 7}   # car, motorcycle, bus, truck
@@ -33,7 +33,8 @@ class Config:
 
     # ── Rule 3: Trajectory convergence ───────────────────────────────────
     CONVERGENCE_ANGLE_THRESHOLD = 30.0
-    MIN_CLOSING_SPEED_PX        = 5.0
+    MIN_CLOSING_SPEED_PX        = 5.0    # px/frame  — used when no calibration
+    MIN_CLOSING_SPEED_MS        = 0.05   # m/frame ≈ 1.5 m/s — used when calibrated
     ENABLE_CONVERGENCE_FACTOR   = True
 
     # ── Rule 4: Path deviation ────────────────────────────────────────────
@@ -51,6 +52,28 @@ class Config:
     # Alert suppression
     ALERT_COOLDOWN_FRAMES = 15
     MIN_FRAMES_TRACKED    = 5
+
+    # Alert suppression
+    ALERT_COOLDOWN_FRAMES = 15
+    MIN_FRAMES_TRACKED    = 5
+
+    # ── Bird's-eye calibration ────────────────────────────────────────────
+    # 4 pixel points mapped to 4 real-world ground points (metres).
+    # Set to None to run in pixel-space (all rules still work, just unitless).
+    #
+    # How to calibrate:
+    #   Pick 4 road points whose real-world positions you know (e.g. lane
+    #   markings, road edges).  Measure or estimate their distances in metres.
+    #   List pixel coords in the same order as world coords.
+    #
+    # Example — single lane, camera roughly overhead:
+    #   pixel: top-left, top-right, bottom-right, bottom-left of a known rectangle
+    #   world: corresponding metres from an arbitrary origin
+    CALIBRATION_POINTS = None
+    # CALIBRATION_POINTS = {
+    #     "pixel": [(152, 430), (528, 430), (528, 250), (152, 250)],
+    #     "world": [(0.0, 0.0), (3.5, 0.0), (3.5, 12.0), (0.0, 12.0)],
+    # }
 
     # Display
     SHOW_TRACKS     = True

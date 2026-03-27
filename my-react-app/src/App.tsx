@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import rankingsData from '../detection/rankings.json'
 import type { CSSProperties } from 'react'
 
 /* ------------------------------------------------------------------ */
@@ -82,20 +83,15 @@ type GoogleMapsApi = {
 /* ------------------------------------------------------------------ */
 
 const GOOGLE_MAPS_API_KEY =
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? 'AIzaSyCLgzXOx7SL0WDyTvSEzC3ui33lz3rlqy4'
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
 const SOFIA_CENTER = { lat: 42.6977, lng: 23.3219 }
 
-const INCIDENTS: IncidentEvent[] = [
-  { lat: 42.6977, lng: 23.3219, weight: 10 },
-  { lat: 42.6934, lng: 23.3189, weight: 8 },
-  { lat: 42.7008, lng: 23.3301, weight: 5 },
-  { lat: 42.6951, lng: 23.3105, weight: 4 },
-  { lat: 42.7055, lng: 23.3268, weight: 3 },
-  { lat: 42.6899, lng: 23.335, weight: 7 },
-  { lat: 42.708, lng: 23.315, weight: 3 },
-  { lat: 42.692, lng: 23.342, weight: 6 },
-]
+const INCIDENTS: IncidentEvent[] = rankingsData.map(r => ({
+  lat: r.cord_y,
+  lng: r.cord_x,
+  weight: r.score,
+}))
 
 const HOTSPOT_RADIUS_M = 200
 const MAX_AVOIDANCE_RETRIES = 2

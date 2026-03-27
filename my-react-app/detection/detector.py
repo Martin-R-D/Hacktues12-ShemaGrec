@@ -13,7 +13,7 @@ from rules import (
     evaluate_vehicle_pair, evaluate_path_deviation,
     evaluate_nonvehicle_proximity, active_factors,
 )
-from geometry import center_distance, path_deviation
+from geometry import center_distance, path_deviation, set_homography, Homography
 from publisher import EventPublisher
 
 
@@ -61,6 +61,13 @@ class NearCrashDetector:
             print(f"[INFO] Saving output -> {out_path}")
 
         self.total_vehicles_seen: set = set()
+
+        if Config.CALIBRATION_POINTS:
+            set_homography(Homography(
+                Config.CALIBRATION_POINTS["pixel"],
+                Config.CALIBRATION_POINTS["world"],
+            ))
+            print("[INFO] Bird's-eye calibration active — distances in metres.")
 
     # ── Main loop ─────────────────────────────────────────────────────────
 
