@@ -88,7 +88,7 @@ def evaluate_vehicle_pair(
 
     if Config.ENABLE_DECEL_FACTOR:
         for t, label in [(t_a, "A"), (t_b, "B")]:
-            if t.acceleration < -Config.DECEL_THRESHOLD:
+            if t.sustained_decel:
                 triggered.append(f"BRAKE_{label}(decel={t.acceleration:.1f}px/f2)")
 
     if Config.ENABLE_CONVERGENCE_FACTOR:

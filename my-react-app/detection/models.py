@@ -13,10 +13,11 @@ class TrackState:
     class_id  : int  = 2
     is_vehicle: bool = True
 
-    centers          : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
-    boxes            : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
-    velocities       : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
-    recent_deviations: collections.deque = field(default_factory=lambda: collections.deque(maxlen=5))
+    centers              : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
+    boxes                : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
+    velocities           : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.TRACK_HISTORY_FRAMES))
+    recent_deviations    : collections.deque = field(default_factory=lambda: collections.deque(maxlen=5))
+    recent_accelerations : collections.deque = field(default_factory=lambda: collections.deque(maxlen=Config.DECEL_CONFIRM_FRAMES))
 
     def update(self, box: Tuple):
         x1, y1, x2, y2 = box
@@ -28,6 +29,11 @@ class TrackState:
             self.velocities.append((0.0, 0.0))
         self.centers.append((cx, cy))
         self.boxes.append(box)
+        # Track per-frame acceleration for sustained-braking check
+        if len(self.velocities) >= 2:
+            self.recent_accelerations.append(
+                float(np.hypot(*self.velocities[-1]) - np.hypot(*self.velocities[-2]))
+            )
 
     @property
     def current_center(self) -> Optional[Tuple]:
@@ -50,6 +56,13 @@ class TrackState:
         if len(self.velocities) < 2:
             return 0.0
         return float(np.hypot(*self.velocities[-1]) - np.hypot(*self.velocities[-2]))
+
+    @property
+    def sustained_decel(self) -> bool:
+        """True only if hard braking persisted for DECEL_CONFIRM_FRAMES consecutive frames."""
+        if len(self.recent_accelerations) < Config.DECEL_CONFIRM_FRAMES:
+            return False
+        return all(a < -Config.DECEL_THRESHOLD for a in self.recent_accelerations)
 
     @property
     def heading(self) -> Optional[float]:

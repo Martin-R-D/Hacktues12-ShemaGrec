@@ -78,6 +78,9 @@ class NearCrashDetector:
               f"({self.publisher.lat},{self.publisher.lon})")
         print(f"[INFO] Active factors: {', '.join(active_factors()) or 'none'}")
         print("[INFO] Running ... press 'q' to quit.")
+        if self.show:
+            cv2.namedWindow("Near-Crash Detector", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("Near-Crash Detector", 1280, 720)
         t0 = time.time()
 
         while True:
