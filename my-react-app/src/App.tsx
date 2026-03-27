@@ -48,6 +48,7 @@ type RoutePolyline = {
   color: string;
   weight: number;
   opacity: number;
+  rank: number;
 };
 
 /* ------------------------------------------------------------------ */
@@ -247,6 +248,7 @@ export default function App() {
   const [routePolylines, setRoutePolylines] = useState<RoutePolyline[]>([]);
   const [panTarget, setPanTarget] = useState<[number, number] | null>(null);
   const [panSeq, setPanSeq] = useState(0);
+  const [selectedRouteRank, setSelectedRouteRank] = useState<number>(0);
 
   const handleMapPick = useCallback(
     (latlng: { lat: number; lng: number }, mode: "origin" | "destination") => {
@@ -271,6 +273,7 @@ export default function App() {
     setRouteError("");
     setRouteInfos([]);
     setRoutePolylines([]);
+    setSelectedRouteRank(0);
 
     try {
       const oCoords = parseLatLngInput(origin);
@@ -326,6 +329,7 @@ export default function App() {
           color: cfg.color,
           weight: idx === 0 ? 6 : 4,
           opacity: idx === 0 ? 0.9 : 0.55,
+          rank: idx,
         });
 
         const leg = route.legs[0];
@@ -350,6 +354,7 @@ export default function App() {
 
       setRoutePolylines(polylines);
       setRouteInfos(infos);
+      setSelectedRouteRank(0);
       if (!parsedResult.withExclusion) {
         setRouteError(
           "Could not find a route avoiding hotspots. Showing the safest possible route.",
@@ -548,6 +553,8 @@ export default function App() {
               canCalc={canCalc}
               btnBg={btnBg}
               btnColor={btnColor}
+              selectedRouteRank={selectedRouteRank}
+              onSelectRoute={setSelectedRouteRank}
               onOriginChange={setOrigin}
               onDestinationChange={setDestination}
               onTravelModeChange={setTravelMode}
@@ -625,17 +632,34 @@ export default function App() {
 
 
           {/* Route polylines */}
-          {[...routePolylines].reverse().map((route, idx) => (
-            <Polyline
-              key={`route-${idx}`}
-              positions={route.positions}
-              pathOptions={{
-                color: route.color,
-                weight: route.weight,
-                opacity: route.opacity,
-              }}
-            />
-          ))}
+          {[...routePolylines]
+            .sort((a, b) =>
+              a.rank === selectedRouteRank
+                ? 1
+                : b.rank === selectedRouteRank
+                  ? -1
+                  : a.rank - b.rank
+            )
+            .map((route) => {
+              const isSelected = route.rank === selectedRouteRank;
+              return (
+                <Polyline
+                  key={`route-${route.rank}`}
+                  positions={route.positions}
+                  pathOptions={{
+                    color: route.color,
+                    weight: isSelected ? 8 : 4,
+                    opacity: isSelected ? 1.0 : 0.4,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      setSelectedRouteRank(route.rank);
+                      setTab("route");
+                    },
+                  }}
+                />
+              );
+            })}
 
           {/* Origin marker */}
           {originCoords && (
@@ -876,6 +900,8 @@ function RoutePanel({
   canCalc,
   btnBg,
   btnColor,
+  selectedRouteRank,
+  onSelectRoute,
   onOriginChange,
   onDestinationChange,
   onTravelModeChange,
@@ -896,6 +922,8 @@ function RoutePanel({
   canCalc: boolean;
   btnBg: string;
   btnColor: string;
+  selectedRouteRank: number;
+  onSelectRoute: (rank: number) => void;
   onOriginChange: (v: string) => void;
   onDestinationChange: (v: string) => void;
   onTravelModeChange: (v: TravelMode) => void;
@@ -1112,15 +1140,21 @@ function RoutePanel({
           </div>
           {routeInfos.map((info) => {
             const cfg = ROUTE_CONFIGS[info.rank];
+            const isSelected = info.rank === selectedRouteRank;
             return (
               <div
                 key={info.rank}
+                onClick={() => onSelectRoute(info.rank)}
                 style={{
                   marginBottom: 8,
                   padding: "10px 12px",
                   borderRadius: 8,
-                  background: cfg.bg,
-                  border: `1px solid ${cfg.border}`,
+                  background: isSelected ? cfg.border : cfg.bg,
+                  border: `1px solid ${isSelected ? cfg.color : cfg.border}`,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  transform: isSelected ? "scale(1.02)" : "scale(1)",
+                  boxShadow: isSelected ? `0 4px 12px ${cfg.bg}` : "none",
                 }}
               >
                 <div

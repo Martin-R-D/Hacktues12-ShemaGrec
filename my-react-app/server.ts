@@ -83,8 +83,8 @@ async function calculateRoute(
       const exclude_polygons =
         mode === "polygons" && exclusionPoints
           ? exclusionPoints.map((point) =>
-              pointToCircle(point.lat, point.lon, radius),
-            )
+            pointToCircle(point.lat, point.lon, radius),
+          )
           : undefined;
       const exclude_locations =
         mode === "locations" && exclusionPoints ? exclusionPoints : undefined;
@@ -127,6 +127,6 @@ async function calculateRoute(
   if (res.length === 0) {
     return { route: [await compute()], withExclusion: false };
   } else {
-    return { route: res, withExclusion: true };
+    return { route: res.reverse(), withExclusion: true };
   }
 }
