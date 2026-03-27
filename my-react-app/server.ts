@@ -74,34 +74,59 @@ async function calculateRoute(
   // Create an actor with config generated on previous step
   const actor = await Actor.fromConfigFile("config.json");
 
-  const compute = async (exclusionPoints?: { lat: number; lon: number}[], radius: number = 30) => {
+  const compute = async (
+    exclusionPoints?: { lat: number; lon: number }[],
+    mode: "locations" | "polygons" = "locations",
+    radius: number = 30,
+  ) => {
     try {
-      const exclude_polygons = exclusionPoints?.map((point) =>
-        pointToCircle(point.lat, point.lon, radius ),
-      );
+      const exclude_polygons =
+        mode === "polygons" && exclusionPoints
+          ? exclusionPoints.map((point) =>
+              pointToCircle(point.lat, point.lon, radius),
+            )
+          : undefined;
+      const exclude_locations =
+        mode === "locations" && exclusionPoints ? exclusionPoints : undefined;
       console.debug("Exclusion polygons:", exclude_polygons);
+      console.debug("Exclusion locations:", exclude_locations);
       const result = await actor.route({
         locations: [
           { lat: data.latA, lon: data.lngA },
           { lat: data.latB, lon: data.lngB },
         ],
         costing: data.travelMode === "drive" ? "auto" : "pedestrian",
-        // exclude_polygons,
-        exclude_locations: exclusionPoints,
+        exclude_polygons,
+        exclude_locations,
       });
       return result;
     } catch (e) {
       if (e instanceof Error) {
-        console.log(e.message); // 171
+        console.log(e.message);
       }
     }
   };
 
-  // Calculate a route
-  const withExclude = await compute(data.exclusion, 30);
-  if (!withExclude) {
-    return { route: await compute(), withExclusion: false };
+  // Calculate a route with 3 iterations:
+  // 1: exclude_locations only (point exclusion)
+  // 2: exclude_polygons with small radius
+  // 3: exclude_polygons with larger radius
+  const radii = [30, 60];
+  const res = [];
+  for (let i = 0; i < 3; i++) {
+    let withExclude;
+    if (i === 0) {
+      withExclude = await compute(data.exclusion, "locations");
+    } else {
+      withExclude = await compute(data.exclusion, "polygons", radii[i - 1]);
+    }
+    if (withExclude) {
+      res.push(withExclude);
+    }
+  }
+  if (res.length === 0) {
+    return { route: [await compute()], withExclusion: false };
   } else {
-    return { route: withExclude, withExclusion: true };
+    return { route: res, withExclusion: true };
   }
 }

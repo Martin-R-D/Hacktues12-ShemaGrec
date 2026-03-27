@@ -27,9 +27,9 @@ type ValhallaTrip = {
 };
 
 export type ValhallaResponse = {
-  route: {
+  route: Array<{
     trip: ValhallaTrip;
-  };
+  }>;
   withExclusion: boolean;
 };
 
@@ -90,37 +90,37 @@ function formatDuration(seconds: number) {
 }
 
 export function valhallaToDirections(response: ValhallaResponse) {
-  const trip = response.route.trip;
-  const units = trip.units ?? "kilometers";
+  const routes = response.route.map((routeEntry) => {
+    const trip = routeEntry.trip;
+    const units = trip.units ?? "kilometers";
 
-  const allPoints: Array<{ lat: number; lng: number }> = [];
+    const allPoints: Array<{ lat: number; lng: number }> = [];
 
-  const legs = trip.legs.map((leg) => {
-    const decoded = decodePolyline6(leg.shape);
-    allPoints.push(...decoded);
+    const legs = trip.legs.map((leg) => {
+      const decoded = decodePolyline6(leg.shape);
+      allPoints.push(...decoded);
 
-    const distanceKm = leg.summary.length;
-    const distanceMeters =
-      units === "miles" ? distanceKm * 1609.34 : distanceKm * 1000;
+      const distanceKm = leg.summary.length;
+      const distanceMeters =
+        units === "miles" ? distanceKm * 1609.34 : distanceKm * 1000;
+
+      return {
+        distance: {
+          text: formatDistance(distanceKm, units),
+          value: Math.round(distanceMeters),
+        },
+        duration: {
+          text: formatDuration(leg.summary.time),
+          value: Math.round(leg.summary.time),
+        },
+      };
+    });
 
     return {
-      distance: {
-        text: formatDistance(distanceKm, units),
-        value: Math.round(distanceMeters),
-      },
-      duration: {
-        text: formatDuration(leg.summary.time),
-        value: Math.round(leg.summary.time),
-      },
+      overview_path: allPoints,
+      legs,
     };
   });
 
-  return {
-    routes: [
-      {
-        overview_path: allPoints,
-        legs,
-      },
-    ],
-  };
+  return { routes };
 }
