@@ -50,6 +50,8 @@ class NearCrashDetector:
         self.fps    = self.cap.get(cv2.CAP_PROP_FPS) or 30.0
         self.width  = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        Config.FRAME_DIAG = float(np.hypot(self.width, self.height))
+        print(f"[INFO] Resolution {self.width}×{self.height}  diag={Config.FRAME_DIAG:.0f}px")
         self.frame_idx = 0
 
         self.writer: Optional[cv2.VideoWriter] = None
@@ -327,7 +329,7 @@ class NearCrashDetector:
 
             # Path deviation indicator
             dev = path_deviation(t) if Config.ENABLE_PATH_DEVIATION else None
-            if dev is not None and dev > Config.PATH_DEVIATION_THRESHOLD * 0.7:
+            if dev is not None and dev > Config.px(Config.PATH_DEVIATION_RATIO) * 0.7:
                 n_fit = len(t.centers)
                 if n_fit >= Config.PATH_FIT_MIN_FRAMES:
                     pts_arr   = np.array(list(t.centers))

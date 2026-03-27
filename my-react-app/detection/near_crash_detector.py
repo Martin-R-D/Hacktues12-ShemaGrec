@@ -16,6 +16,9 @@ If the output file already contains data, new results are merged in
 
 Requirements:
     pip install ultralytics opencv-python numpy
+    pip uninstall torch torchvision
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
 
 Usage:
     python near_crash_detector.py --source path/to/video.mp4 --location "CAM_01|42.6977,23.3219"

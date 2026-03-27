@@ -62,7 +62,7 @@ class TrackState:
         """True only if hard braking persisted for DECEL_CONFIRM_FRAMES consecutive frames."""
         if len(self.recent_accelerations) < Config.DECEL_CONFIRM_FRAMES:
             return False
-        return all(a < -Config.DECEL_THRESHOLD for a in self.recent_accelerations)
+        return all(a < -Config.px(Config.DECEL_THRESHOLD_RATIO) for a in self.recent_accelerations)
 
     @property
     def heading(self) -> Optional[float]:
