@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import rankingsData from '../detection/rankings.json'
 import type { CSSProperties } from 'react'
-
+import "./App.css"
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
