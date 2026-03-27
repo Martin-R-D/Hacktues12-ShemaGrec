@@ -23,8 +23,8 @@ class Config:
 
     # ── Rule 1: Overlap + proximity ──────────────────────────────────────
     IOU_ALERT_THRESHOLD         = 0.10
-    PROXIMITY_RATIO_THRESHOLD   = 0.60
-    ENABLE_OVERLAP_FACTOR       = False
+    PROXIMITY_RATIO_THRESHOLD   = 0.10
+    ENABLE_OVERLAP_FACTOR       = True
     ENABLE_PROXIMITY_FACTOR     = True
 
     # ── Rule 2: Deceleration ─────────────────────────────────────────────
@@ -40,22 +40,21 @@ class Config:
     # ── Rule 4: Path deviation ────────────────────────────────────────────
     PATH_FIT_MIN_FRAMES         = 12
     PATH_DEVIATION_THRESHOLD    = 55.0
-    ENABLE_PATH_DEVIATION       = False
+    ENABLE_PATH_DEVIATION       = True
 
     # ── Rule 5: Non-vehicle proximity to cars ─────────────────────────────
     NON_VEH_DISTANCE_DROP_RATIO = 0.40
     NON_VEH_WINDOW_FRAMES       = 10
     NON_VEH_MIN_ALERT_DIST_ABS  = 35.0
     NON_VEH_MAX_DIST_ABS        = 220.0
-    ENABLE_NONVEH_PROXIMITY     = False
+    ENABLE_NONVEH_PROXIMITY     = True
 
     # Alert suppression
     ALERT_COOLDOWN_FRAMES = 15
     MIN_FRAMES_TRACKED    = 5
 
-    # Alert suppression
-    ALERT_COOLDOWN_FRAMES = 15
-    MIN_FRAMES_TRACKED    = 5
+    # How many frames to keep alert banners visible after detection
+    ALERT_DISPLAY_FRAMES  = 90
 
     # ── Bird's-eye calibration ────────────────────────────────────────────
     # 4 pixel points mapped to 4 real-world ground points (metres).

@@ -182,3 +182,159 @@
     border-right-color: var(--border);
   }
 }
+
+/* ── button base resets ── */
+button,
+select {
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.12s ease,
+    opacity 0.18s ease;
+  will-change: transform;
+}
+
+/* ── tab buttons ── */
+.tab-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.tab-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.04);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tab-btn:hover::after {
+  opacity: 1;
+}
+
+/* ── primary action button (Find routes / Calculate) ── */
+.btn-primary:not(:disabled) {
+  transition:
+    background 0.2s ease,
+    transform 0.1s ease,
+    box-shadow 0.2s ease;
+}
+
+.btn-primary:not(:disabled):hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(226, 75, 74, 0.35);
+}
+
+.btn-primary:not(:disabled):active {
+  transform: translateY(0px) scale(0.98);
+  box-shadow: none;
+}
+
+/* ── secondary / ghost buttons (Clear routes, Pick on map) ── */
+.btn-ghost {
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.btn-ghost:hover {
+  background: rgba(255,255,255,0.07) !important;
+  border-color: rgba(255,255,255,0.2) !important;
+}
+
+.btn-ghost:active {
+  transform: scale(0.97);
+}
+
+/* ── pick-mode active state pulse ── */
+@keyframes pickPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 109, 17, 0.45); }
+  50%       { box-shadow: 0 0 0 5px rgba(59, 109, 17, 0); }
+}
+
+@keyframes pickPulseRed {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(226, 75, 74, 0.45); }
+  50%       { box-shadow: 0 0 0 5px rgba(226, 75, 74, 0); }
+}
+
+.pick-origin-active  { animation: pickPulse    1.6s ease-in-out infinite; }
+.pick-dest-active    { animation: pickPulseRed 1.6s ease-in-out infinite; }
+
+/* ── toggle button ── */
+button[aria-label] {
+  transition: background 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button[aria-label] span {
+  transition: left 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── hotspot list items ── */
+.incident-btn {
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.incident-btn:hover {
+  transform: translateX(2px);
+}
+
+.incident-btn:active {
+  transform: translateX(2px) scale(0.99);
+}
+
+/* ── route info cards sliding in ── */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.route-card {
+  animation: slideIn 0.22s ease forwards;
+}
+
+.route-card:nth-child(2) { animation-delay: 0.05s; }
+.route-card:nth-child(3) { animation-delay: 0.10s; }
+
+/* ── error / warning banners ── */
+@keyframes fadeSlideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.route-error {
+  animation: fadeSlideDown 0.2s ease;
+}
+
+/* ── severity counter badges ── */
+.severity-cell {
+  transition: background 0.15s ease;
+}
+
+.severity-cell:hover {
+  background: rgba(255,255,255,0.04) !important;
+}
+
+/* ── select dropdown ── */
+select:hover {
+  border-color: rgba(255,255,255,0.22) !important;
+  background: rgba(255,255,255,0.09) !important;
+}
+
+select:focus {
+  border-color: rgba(226, 75, 74, 0.5) !important;
+  outline: none;
+}
