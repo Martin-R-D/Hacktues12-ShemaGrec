@@ -31,6 +31,7 @@ type MapsEventListenerLike = { remove(): void }
 type GoogleMapLike = {
   panTo(coords: { lat: number; lng: number }): void
   setZoom(level: number): void
+  setOptions(options: object): void
   addListener(
     eventName: string,
     handler: (event: MapMouseEventLike) => void,
@@ -44,11 +45,6 @@ type MarkerLike = {
 }
 
 type HeatmapLike = { setMap(map: GoogleMapLike | null): void }
-
-type CircleLike = {
-  setMap(map: GoogleMapLike | null): void
-  setVisible(visible: boolean): void
-}
 
 type DirectionsResultLike = {
   routes: Array<{
@@ -77,7 +73,6 @@ type GoogleMapsApi = {
       route(options: object): Promise<DirectionsResultLike>
     }
     DirectionsRenderer: new (options: object) => DirectionsRendererLike
-    Circle: new (options: object) => CircleLike
     visualization: {
       HeatmapLayer: new (options: object) => HeatmapLike
     }
@@ -85,11 +80,174 @@ type GoogleMapsApi = {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Theme                                                              */
+/* ------------------------------------------------------------------ */
+
+type Theme = {
+  // sidebar
+  appBg: string
+  sidebarBg: string
+  sidebarBorder: string
+  headerBorder: string
+  subText: string
+  text: string
+  textMuted: string
+  textFaint: string
+  severityBg: string
+  tabActiveBorder: string
+  tabBorder: string
+  itemBg: string
+  itemBorder: string
+  itemBgSelected: string
+  itemBorderSelected: string
+  toggleRowBg: string
+  inputBg: string
+  inputBorder: string
+  inputColor: string
+  avoidBgOn: string
+  avoidBorderOn: string
+  avoidBgOff: string
+  avoidBorderOff: string
+  avoidHintText: string
+  avoidBodyText: string
+  pickOriginBg: string
+  pickOriginBorder: string
+  pickDestBg: string
+  pickDestBorder: string
+  pickText: string
+  clearBorder: string
+  clearText: string
+  footerText: string
+  // popup card on map
+  popupBg: string
+  popupBorder: string
+  popupText: string
+  popupMuted: string
+  popupCloseBtnColor: string
+  // map loading overlay
+  mapLoadingBg: string
+  mapLoadingText: string
+}
+
+const DARK: Theme = {
+  appBg: '#0f1114',
+  sidebarBg: '#141618',
+  sidebarBorder: 'rgba(255,255,255,0.06)',
+  headerBorder: 'rgba(255,255,255,0.06)',
+  subText: 'rgba(232,228,220,0.45)',
+  text: '#e8e4dc',
+  textMuted: 'rgba(232,228,220,0.6)',
+  textFaint: 'rgba(232,228,220,0.4)',
+  severityBg: 'rgba(255,255,255,0.04)',
+  tabActiveBorder: '#E24B4A',
+  tabBorder: 'rgba(255,255,255,0.06)',
+  itemBg: 'rgba(255,255,255,0.03)',
+  itemBorder: 'rgba(255,255,255,0.06)',
+  itemBgSelected: 'rgba(226,75,74,0.1)',
+  itemBorderSelected: 'rgba(226,75,74,0.4)',
+  toggleRowBg: 'rgba(255,255,255,0.04)',
+  inputBg: 'rgba(255,255,255,0.06)',
+  inputBorder: 'rgba(255,255,255,0.1)',
+  inputColor: '#e8e4dc',
+  avoidBgOn: 'rgba(99,153,34,0.08)',
+  avoidBorderOn: 'rgba(99,153,34,0.25)',
+  avoidBgOff: 'rgba(255,255,255,0.04)',
+  avoidBorderOff: 'rgba(255,255,255,0.06)',
+  avoidHintText: 'rgba(232,228,220,0.45)',
+  avoidBodyText: 'rgba(232,228,220,0.72)',
+  pickOriginBg: 'rgba(59,109,17,0.2)',
+  pickOriginBorder: 'rgba(59,109,17,0.55)',
+  pickDestBg: 'rgba(226,75,74,0.2)',
+  pickDestBorder: 'rgba(226,75,74,0.55)',
+  pickText: '#e8e4dc',
+  clearBorder: 'rgba(255,255,255,0.1)',
+  clearText: 'rgba(232,228,220,0.6)',
+  footerText: 'rgba(232,228,220,0.25)',
+  popupBg: '#141618',
+  popupBorder: 'rgba(255,255,255,0.08)',
+  popupText: '#e8e4dc',
+  popupMuted: 'rgba(232,228,220,0.6)',
+  popupCloseBtnColor: 'rgba(232,228,220,0.6)',
+  mapLoadingBg: '#1a1d20',
+  mapLoadingText: 'rgba(232,228,220,0.6)',
+}
+
+const LIGHT: Theme = {
+  appBg: '#f0ede8',
+  sidebarBg: '#ffffff',
+  sidebarBorder: 'rgba(0,0,0,0.08)',
+  headerBorder: 'rgba(0,0,0,0.07)',
+  subText: 'rgba(40,35,28,0.5)',
+  text: '#1a1714',
+  textMuted: 'rgba(40,35,28,0.65)',
+  textFaint: 'rgba(40,35,28,0.4)',
+  severityBg: 'rgba(0,0,0,0.03)',
+  tabActiveBorder: '#E24B4A',
+  tabBorder: 'rgba(0,0,0,0.07)',
+  itemBg: 'rgba(0,0,0,0.025)',
+  itemBorder: 'rgba(0,0,0,0.07)',
+  itemBgSelected: 'rgba(226,75,74,0.07)',
+  itemBorderSelected: 'rgba(226,75,74,0.35)',
+  toggleRowBg: 'rgba(0,0,0,0.03)',
+  inputBg: 'rgba(0,0,0,0.04)',
+  inputBorder: 'rgba(0,0,0,0.12)',
+  inputColor: '#1a1714',
+  avoidBgOn: 'rgba(99,153,34,0.07)',
+  avoidBorderOn: 'rgba(99,153,34,0.3)',
+  avoidBgOff: 'rgba(0,0,0,0.03)',
+  avoidBorderOff: 'rgba(0,0,0,0.07)',
+  avoidHintText: 'rgba(40,35,28,0.5)',
+  avoidBodyText: 'rgba(40,35,28,0.7)',
+  pickOriginBg: 'rgba(59,109,17,0.08)',
+  pickOriginBorder: 'rgba(59,109,17,0.4)',
+  pickDestBg: 'rgba(226,75,74,0.08)',
+  pickDestBorder: 'rgba(226,75,74,0.4)',
+  pickText: '#1a1714',
+  clearBorder: 'rgba(0,0,0,0.12)',
+  clearText: 'rgba(40,35,28,0.55)',
+  footerText: 'rgba(40,35,28,0.3)',
+  popupBg: '#ffffff',
+  popupBorder: 'rgba(0,0,0,0.1)',
+  popupText: '#1a1714',
+  popupMuted: 'rgba(40,35,28,0.6)',
+  popupCloseBtnColor: 'rgba(40,35,28,0.5)',
+  mapLoadingBg: '#e8e4dc',
+  mapLoadingText: 'rgba(40,35,28,0.55)',
+}
+
+/* ------------------------------------------------------------------ */
+/*  Map styles                                                         */
+/* ------------------------------------------------------------------ */
+
+const MAP_STYLES_DARK = [
+  { elementType: 'geometry', stylers: [{ color: '#1a1d20' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8a8a8a' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1d20' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2c2f33' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#38393e' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3c3f45' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#6b6b6b' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0d1117' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#3d4349' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#212428' }] },
+]
+
+const MAP_STYLES_LIGHT = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { elementType: 'geometry', stylers: [{ color: '#f5f5f0' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#e8e4dc' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9d8e8' }] },
+]
+
+/* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const GOOGLE_MAPS_API_KEY =
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
 const SOFIA_CENTER = { lat: 42.6977, lng: 23.3219 }
 
@@ -99,9 +257,8 @@ const INCIDENTS: IncidentEvent[] = rankingsData.map(r => ({
   weight: r.score,
 }))
 
-const HOTSPOT_RADIUS_M = 350
-const MAX_AVOIDANCE_RETRIES = 8
-const ROUTE_CORRIDOR_KM = 15  // only consider hotspots within this distance of the route corridor
+const HOTSPOT_RADIUS_M = 200
+const MAX_AVOIDANCE_RETRIES = 2
 
 const SEVERITY_META: Record<Severity, { color: string; label: string }> = {
   high: { color: '#E24B4A', label: 'High' },
@@ -115,17 +272,6 @@ const ROUTE_CONFIGS = [
   { color: '#EF9F27', label: '2nd Safest', textColor: '#EF9F27', bg: 'rgba(239,159,39,0.08)', border: 'rgba(239,159,39,0.3)' },
   { color: '#1E88E5', label: '3rd Safest', textColor: '#1E88E5', bg: 'rgba(30,136,229,0.08)', border: 'rgba(30,136,229,0.3)' },
 ]
-
-const INPUT_STYLE: CSSProperties = {
-  width: '100%',
-  padding: '9px 12px',
-  borderRadius: 8,
-  background: 'rgba(255,255,255,0.06)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  color: '#e8e4dc',
-  fontSize: 13,
-  outline: 'none',
-}
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -171,22 +317,6 @@ function severityFromWeight(w: number): Severity {
   if (w >= 7) return 'high'
   if (w >= 4) return 'medium'
   return 'low'
-}
-
-/** Return only hotspots that are within ROUTE_CORRIDOR_KM of the straight
- *  line between origin and destination and have a non-zero score. */
-function getCorridorHotspots(
-  o: { lat: number; lng: number },
-  d: { lat: number; lng: number },
-): Incident[] {
-  const corridorM = ROUTE_CORRIDOR_KM * 1000
-  const samples: Array<{ lat: number; lng: number }> = []
-  for (let t = 0; t <= 1; t += 0.1) {
-    samples.push({ lat: o.lat + (d.lat - o.lat) * t, lng: o.lng + (d.lng - o.lng) * t })
-  }
-  return ENRICHED_INCIDENTS.filter(
-    (hs) => hs.weight > 0 && samples.some((s) => haversineMeters(hs.lat, hs.lng, s.lat, s.lng) <= corridorM),
-  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -264,12 +394,11 @@ export default function App() {
   const originMarkerRef = useRef<MarkerLike | null>(null)
   const destMarkerRef = useRef<MarkerLike | null>(null)
   const incidentMarkersRef = useRef<MarkerLike[]>([])
-  const incidentCirclesRef = useRef<CircleLike[]>([])
   const heatmapRef = useRef<HeatmapLike | null>(null)
-  // Three renderers for three routes
   const renderersRef = useRef<DirectionsRendererLike[]>([])
 
   /* ---- state ---- */
+  const [darkMode, setDarkMode] = useState(true)
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
   const [origin, setOrigin] = useState('')
   const [destination, setDestination] = useState('')
@@ -282,6 +411,8 @@ export default function App() {
   const [mapPickMode, setMapPickMode] = useState<'origin' | 'destination' | null>(null)
   const [tab, setTab] = useState<'heatmap' | 'route'>('heatmap')
   const [mapReady, setMapReady] = useState(false)
+
+  const T = darkMode ? DARK : LIGHT
 
   const { loaded: mapsLoaded, error: mapsError } = useGoogleMaps(GOOGLE_MAPS_API_KEY)
 
@@ -299,6 +430,12 @@ export default function App() {
   const setSelectedIncidentRef = useRef(setSelectedIncident)
   setSelectedIncidentRef.current = setSelectedIncident
 
+  /* ---- update map styles when darkMode toggles ---- */
+  useEffect(() => {
+    if (!mapRef.current) return
+    mapRef.current.setOptions({ styles: darkMode ? MAP_STYLES_DARK : MAP_STYLES_LIGHT })
+  }, [darkMode])
+
   /* ---- map initialisation ---- */
   useEffect(() => {
     const google = getGoogle()
@@ -310,14 +447,7 @@ export default function App() {
       zoom: 14,
       disableDefaultUI: true,
       zoomControl: true,
-      styles: [
-        { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-        { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-        { elementType: 'geometry', stylers: [{ color: '#f5f5f0' }] },
-        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
-        { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#e8e4dc' }] },
-        { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9d8e8' }] },
-      ],
+      styles: MAP_STYLES_DARK,
     })
 
     mapRef.current = map
@@ -334,7 +464,6 @@ export default function App() {
     })
 
     // Create 3 renderers with different colors
-    // Render in reverse order so safest (rank 0) is drawn on top
     renderersRef.current.forEach((r) => r.setMap(null))
     renderersRef.current = ROUTE_CONFIGS.map((cfg, i) =>
       new google.maps.DirectionsRenderer({
@@ -343,13 +472,12 @@ export default function App() {
           strokeWeight: i === 0 ? 6 : 4,
           strokeOpacity: i === 0 ? 0.9 : 0.55,
         },
-        suppressMarkers: true, // we manage our own origin/dest pins
+        suppressMarkers: true,
       })
     )
 
-    // Incident markers + radius circles
+    // Incident markers
     incidentMarkersRef.current.forEach((m) => m.setMap(null))
-    incidentCirclesRef.current.forEach((c) => c.setMap(null))
     incidentMarkersRef.current = ENRICHED_INCIDENTS.map((inc) => {
       const marker = new google.maps.Marker({
         position: { lat: inc.lat, lng: inc.lng },
@@ -366,19 +494,6 @@ export default function App() {
       })
       marker.addListener('click', () => setSelectedIncidentRef.current(inc))
       return marker
-    })
-    incidentCirclesRef.current = ENRICHED_INCIDENTS.map((inc) => {
-      return new google.maps.Circle({
-        center: { lat: inc.lat, lng: inc.lng },
-        radius: HOTSPOT_RADIUS_M,
-        map,
-        strokeColor: '#FFD600',
-        strokeOpacity: 0.7,
-        strokeWeight: 1,
-        fillColor: '#FFD600',
-        fillOpacity: 0.12,
-        clickable: false,
-      })
     })
 
     clickListenerRef.current = map.addListener('click', (event) => {
@@ -408,8 +523,6 @@ export default function App() {
       destMarkerRef.current = null
       incidentMarkersRef.current.forEach((m) => m.setMap(null))
       incidentMarkersRef.current = []
-      incidentCirclesRef.current.forEach((c) => c.setMap(null))
-      incidentCirclesRef.current = []
       renderersRef.current.forEach((r) => r.setMap(null))
       renderersRef.current = []
       heatmapRef.current?.setMap(null)
@@ -419,10 +532,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapsLoaded])
 
-  /* ---- marker + circle visibility ---- */
+  /* ---- marker visibility ---- */
   useEffect(() => {
     incidentMarkersRef.current.forEach((m) => m.setVisible(showMarkers))
-    incidentCirclesRef.current.forEach((c) => c.setVisible(showMarkers))
   }, [showMarkers])
 
   /* ---- origin / destination pin markers ---- */
@@ -465,7 +577,7 @@ export default function App() {
     placePin('destination', parseLatLngInput(destination))
   }, [destination, mapReady, placePin])
 
-  /* ---- route calculation — now produces up to 3 routes ---- */
+  /* ---- route calculation ---- */
   const calcRoute = useCallback(async () => {
     const google = getGoogle()
     const map = mapRef.current
@@ -476,14 +588,12 @@ export default function App() {
     setRouteError('')
     setRouteInfos([])
 
-    // Clear existing routes
     renderers.forEach((r) => r.setMap(null))
 
     try {
       const service = new google.maps.DirectionsService()
 
       if (!avoidDanger) {
-        // Fastest-route mode — show top 3 alternatives by duration
         const result = await service.route({
           origin,
           destination,
@@ -516,52 +626,9 @@ export default function App() {
         return
       }
 
-      /*
-       * Safe-route mode: compute 3 separate safe routes.
-       *
-       * For each of the 3 slots:
-       *   - Run iterative hotspot-avoidance (same logic as before).
-       *   - After picking the safest, exclude that route's waypoints pattern
-       *     for the next iteration by slightly perturbing waypoints so Google
-       *     returns meaningfully different alternatives.
-       *
-       * In practice we simply request with provideRouteAlternatives:true and
-       * rank all returned alternatives by safety score, then assign the top 3
-       * distinct alternatives to separate renderers.
-       */
-      // Filter hotspots to only those near the origin–destination corridor
-      const oCoords = parseLatLngInput(origin)
-      const dCoords = parseLatLngInput(destination)
-      const nearby = oCoords && dCoords ? getCorridorHotspots(oCoords, dCoords) : []
-
-      // Accumulate candidate routes across multiple API calls.
-      // Each candidate keeps a reference to its source result + index so
-      // we can bind it to a DirectionsRenderer later.
-      type Candidate = {
-        result: DirectionsResultLike
-        idx: number
-        risk: number
-        touchedCount: number
-        duration: number
-        key: string // dedup by rounded path
-      }
-
-      const candidates: Candidate[] = []
-      const seenKeys = new Set<string>()
-
-      // Build a rough dedup key from a route's overview path
-      const routeKey = (route: DirectionsResultLike['routes'][0]): string => {
-        const pts = route.overview_path ?? []
-        // Sample ~8 points along the path
-        const step = Math.max(1, Math.floor(pts.length / 8))
-        return pts
-          .filter((_, i) => i % step === 0)
-          .map((p) => `${p.lat().toFixed(3)},${p.lng().toFixed(3)}`)
-          .join('|')
-      }
-
       let waypoints: Array<{ location: { lat: number; lng: number }; stopover: false }> = []
-      let foundClean = false
+      let bestResult: DirectionsResultLike | null = null
+      let touchedByBest: Incident[] = []
 
       for (let attempt = 0; attempt <= MAX_AVOIDANCE_RETRIES; attempt++) {
         const result = await service.route({
@@ -573,60 +640,21 @@ export default function App() {
         })
 
         if (!result.routes.length) {
-          if (candidates.length === 0) {
-            setRouteError('No routes returned. Please check both addresses.')
-            return
-          }
-          break
+          setRouteError('No routes returned. Please check both addresses.')
+          return
         }
 
-        // Score every route from this call and add new ones to the pool
-        for (let ri = 0; ri < result.routes.length; ri++) {
-          const route = result.routes[ri]
-          const key = routeKey(route)
-          if (seenKeys.has(key)) continue
-          seenKeys.add(key)
+        const idx = result.routes.length > 1 ? pickSafestRoute(result.routes) : 0
+        const route = result.routes[idx]
+        const touched = findTouchedHotspots(route)
 
-          const points = densifyPath(route.overview_path ?? [])
-          const touched = new Set<number>()
-          let risk = 0
-          points.forEach((p) => {
-            nearby.forEach((hs) => {
-              const d = haversineMeters(p.lat, p.lng, hs.lat, hs.lng)
-              if (d <= HOTSPOT_RADIUS_M) {
-                touched.add(hs.id)
-                risk += ((HOTSPOT_RADIUS_M - d) / HOTSPOT_RADIUS_M) * hs.weight
-              }
-            })
-          })
-
-          candidates.push({
-            result,
-            idx: ri,
-            risk,
-            touchedCount: touched.size,
-            duration: route.legs[0]?.duration?.value ?? Infinity,
-            key,
-          })
-
-          if (touched.size === 0) foundClean = true
-        }
-
-        // Stop early if we already have a clean route
-        if (foundClean) break
-
-        // Pick the best route so far to compute avoidance waypoints from
-        const best = [...candidates].sort((a, b) =>
-          a.touchedCount !== b.touchedCount ? a.touchedCount - b.touchedCount
-            : a.risk !== b.risk ? a.risk - b.risk
-            : a.duration - b.duration
-        )[0]
-        const bestRoute = best.result.routes[best.idx]
-        const touched = findTouchedHotspots(bestRoute, nearby)
+        bestResult = result
+        touchedByBest = touched
 
         if (touched.length === 0) break
+        if (attempt === MAX_AVOIDANCE_RETRIES) break
 
-        const newWaypoints = computeAvoidanceWaypoints(bestRoute, touched)
+        const newWaypoints = computeAvoidanceWaypoints(route, touched)
         if (newWaypoints.length === 0) break
 
         waypoints = [
@@ -635,36 +663,31 @@ export default function App() {
         ]
       }
 
-      if (candidates.length === 0) {
+      if (!bestResult) {
         setRouteError('Could not find a route. Please check both addresses.')
         return
       }
 
-      // Rank entire pool and pick top 3
-      candidates.sort((a, b) =>
-        a.touchedCount !== b.touchedCount ? a.touchedCount - b.touchedCount
-          : a.risk !== b.risk ? a.risk - b.risk
-          : a.duration - b.duration
-      )
-      const top3 = candidates.slice(0, 3)
+      const ranked = rankRoutesBySafety(bestResult.routes)
+      const top3 = ranked.slice(0, 3)
 
-      if (!foundClean) {
+      if (touchedByBest.length > 0) {
         setRouteError('No fully safe route found. Showing the safest available routes.')
       }
 
       const infos: RouteInfo[] = []
-      top3.forEach((c, rank) => {
+      top3.forEach(({ idx, touchedCount }, rank) => {
         const renderer = renderers[rank]
         if (!renderer) return
         renderer.setMap(map)
-        renderer.setDirections(c.result)
-        renderer.setRouteIndex(c.idx)
-        const leg = c.result.routes[c.idx]?.legs[0]
+        renderer.setDirections(bestResult!)
+        renderer.setRouteIndex(idx)
+        const leg = bestResult!.routes[idx]?.legs[0]
         if (leg?.distance?.text && leg?.duration?.text) {
           infos.push({
             distance: leg.distance.text,
             duration: leg.duration.text,
-            avoided: nearby.length - c.touchedCount,
+            avoided: HIGH_RISK_INCIDENTS.length - touchedCount,
             rank,
           })
         }
@@ -694,12 +717,23 @@ export default function App() {
 
   /* ---- derived values ---- */
   const canCalc = origin.length > 0 && destination.length > 0 && !routeLoading
-  const btnBg = canCalc ? '#E24B4A' : 'rgba(255,255,255,0.08)'
-  const btnColor = canCalc ? '#fff' : 'rgba(232,228,220,0.3)'
+  const btnBg = canCalc ? '#E24B4A' : (darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)')
+  const btnColor = canCalc ? '#fff' : (darkMode ? 'rgba(232,228,220,0.3)' : 'rgba(40,35,28,0.3)')
+
+  const inputStyle: CSSProperties = {
+    width: '100%',
+    padding: '9px 12px',
+    borderRadius: 8,
+    background: T.inputBg,
+    border: `1px solid ${T.inputBorder}`,
+    color: T.inputColor,
+    fontSize: 13,
+    outline: 'none',
+  }
 
   /* ---- render ---- */
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#0f1114', color: '#e8e4dc' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: T.appBg, color: T.text, transition: 'background 0.3s ease, color 0.3s ease' }}>
       {/* ================ SIDEBAR ================ */}
       <aside
         style={{
@@ -707,14 +741,15 @@ export default function App() {
           height: '100vh',
           display: 'flex',
           flexDirection: 'column',
-          background: '#141618',
-          borderRight: '1px solid rgba(255,255,255,0.06)',
+          background: T.sidebarBg,
+          borderRight: `1px solid ${T.sidebarBorder}`,
           flexShrink: 0,
           overflow: 'hidden',
+          transition: 'background 0.3s ease, border-color 0.3s ease',
         }}
       >
         {/* -- header -- */}
-        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${T.headerBorder}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <div
               style={{
@@ -732,7 +767,7 @@ export default function App() {
             >
               S
             </div>
-            <span style={{ fontSize: 16, fontWeight: 600 }}>SafeRoute</span>
+            <span style={{ fontSize: 16, fontWeight: 600, color: T.text }}>SafeRoute</span>
             <span
               style={{
                 marginLeft: 'auto',
@@ -746,19 +781,19 @@ export default function App() {
               LIVE
             </span>
           </div>
-          <p style={{ fontSize: 11, color: 'rgba(232,228,220,0.45)', margin: 0 }}>
+          <p style={{ fontSize: 11, color: T.subText, margin: 0 }}>
             {`Sofia | ${INCIDENTS.length} incidents | last 30 days`}
           </p>
         </div>
 
         {/* -- severity counts -- */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'rgba(255,255,255,0.04)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: T.severityBg }}>
           {(['high', 'medium', 'low'] as const).map((sev) => (
-            <div key={sev} style={{ padding: '12px 0', textAlign: 'center', background: '#141618' }}>
+            <div key={sev} className="severity-cell" style={{ padding: '12px 0', textAlign: 'center', background: T.sidebarBg }}>
               <div style={{ fontSize: 20, fontWeight: 700, color: SEVERITY_META[sev].color }}>
                 {SEVERITY_COUNTS[sev]}
               </div>
-              <div style={{ fontSize: 10, color: 'rgba(232,228,220,0.4)' }}>
+              <div style={{ fontSize: 10, color: T.textFaint }}>
                 {SEVERITY_META[sev].label}
               </div>
             </div>
@@ -766,18 +801,19 @@ export default function App() {
         </div>
 
         {/* -- tabs -- */}
-        <div style={{ display: 'flex', borderBlock: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display: 'flex', borderBlock: `1px solid ${T.tabBorder}` }}>
           {(['heatmap', 'route'] as const).map((value) => (
             <button
               key={value}
+              className="tab-btn"
               onClick={() => setTab(value)}
               style={{
                 flex: 1,
                 padding: '11px 0',
                 border: 'none',
                 background: 'none',
-                color: tab === value ? '#e8e4dc' : 'rgba(232,228,220,0.35)',
-                borderBottom: `2px solid ${tab === value ? '#E24B4A' : 'transparent'}`,
+                color: tab === value ? T.text : T.textFaint,
+                borderBottom: `2px solid ${tab === value ? T.tabActiveBorder : 'transparent'}`,
                 cursor: 'pointer',
               }}
             >
@@ -793,6 +829,7 @@ export default function App() {
               incidents={SORTED_INCIDENTS}
               selectedId={selectedIncident?.id ?? null}
               showMarkers={showMarkers}
+              T={T}
               onToggleMarkers={() => setShowMarkers((v) => !v)}
               onSelectIncident={(inc) => {
                 setSelectedIncident((prev) => (prev?.id === inc.id ? null : inc))
@@ -814,6 +851,8 @@ export default function App() {
               canCalc={canCalc}
               btnBg={btnBg}
               btnColor={btnColor}
+              T={T}
+              inputStyle={inputStyle}
               onOriginChange={setOrigin}
               onDestinationChange={setDestination}
               onTravelModeChange={setTravelMode}
@@ -826,7 +865,7 @@ export default function App() {
         </div>
 
         {/* -- footer -- */}
-        <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: 10, color: 'rgba(232,228,220,0.25)' }}>
+        <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.headerBorder}`, fontSize: 10, color: T.footerText }}>
           VenTech | SafeRoute | HackTUES 2026
         </div>
       </aside>
@@ -834,6 +873,37 @@ export default function App() {
       {/* ================ MAP ================ */}
       <main style={{ flex: 1, position: 'relative', minHeight: '100vh' }}>
         <div ref={mapElRef} style={{ width: '100%', height: '100%' }} />
+
+        {/* ---- theme toggle button top-right ---- */}
+        <button
+          onClick={() => setDarkMode((v) => !v)}
+          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          style={{
+            position: 'absolute',
+            top: 16,
+            right: 16,
+            zIndex: 10,
+            width: 40,
+            height: 40,
+            borderRadius: 10,
+            border: darkMode ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.12)',
+            background: darkMode ? 'rgba(20,22,24,0.85)' : 'rgba(255,255,255,0.9)',
+            backdropFilter: 'blur(6px)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 18,
+            transition: 'background 0.25s ease, border-color 0.25s ease, transform 0.1s ease',
+            boxShadow: darkMode ? '0 2px 8px rgba(0,0,0,0.4)' : '0 2px 8px rgba(0,0,0,0.1)',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.08)')}
+          onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+          onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
+          onMouseUp={e => (e.currentTarget.style.transform = 'scale(1.08)')}
+        >
+          {darkMode ? '☀️' : '🌙'}
+        </button>
 
         {mapsError && (
           <div
@@ -843,7 +913,7 @@ export default function App() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: '#1a1d20',
+              background: T.mapLoadingBg,
               color: '#E24B4A',
             }}
           >
@@ -859,8 +929,8 @@ export default function App() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: '#1a1d20',
-              color: 'rgba(232,228,220,0.6)',
+              background: T.mapLoadingBg,
+              color: T.mapLoadingText,
             }}
           >
             Loading map...
@@ -876,21 +946,22 @@ export default function App() {
               minWidth: 240,
               padding: '14px 16px',
               borderRadius: 12,
-              background: '#141618',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: T.popupBg,
+              border: `1px solid ${T.popupBorder}`,
               boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              transition: 'background 0.3s ease',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <strong style={{ fontSize: 12 }}>{selectedIncident.location}</strong>
+              <strong style={{ fontSize: 12, color: T.popupText }}>{selectedIncident.location}</strong>
               <button
                 onClick={() => setSelectedIncident(null)}
-                style={{ border: 'none', background: 'none', color: 'rgba(232,228,220,0.6)', cursor: 'pointer' }}
+                style={{ border: 'none', background: 'none', color: T.popupCloseBtnColor, cursor: 'pointer' }}
               >
                 x
               </button>
             </div>
-            <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+            <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, color: T.popupMuted }}>
               <span>{selectedIncident.count} incidents</span>
               <span>{SEVERITY_META[selectedIncident.severity].label}</span>
               <span>{selectedIncident.camera}</span>
@@ -934,9 +1005,9 @@ function densifyPath(path: LatLngLike[]): Array<{ lat: number; lng: number }> {
   return out
 }
 
-function findTouchedHotspots(route: RouteType, hotspots: Incident[]): Incident[] {
+function findTouchedHotspots(route: RouteType): Incident[] {
   const points = densifyPath(route.overview_path ?? [])
-  return hotspots.filter((hs) =>
+  return HIGH_RISK_INCIDENTS.filter((hs) =>
     points.some((p) => haversineMeters(p.lat, p.lng, hs.lat, hs.lng) <= HOTSPOT_RADIUS_M),
   )
 }
@@ -994,8 +1065,35 @@ function computeAvoidanceWaypoints(
   return waypoints
 }
 
+function rankRoutesBySafety(routes: DirectionsResultLike['routes']): Array<{ idx: number; touchedCount: number; risk: number; duration: number }> {
+  const scored = routes.map((route, idx) => {
+    const points = densifyPath(route.overview_path ?? [])
+    const touched = new Set<number>()
+    let risk = 0
 
-/** Rank all routes by duration (fastest first) */
+    points.forEach((p) => {
+      HIGH_RISK_INCIDENTS.forEach((hs) => {
+        const d = haversineMeters(p.lat, p.lng, hs.lat, hs.lng)
+        if (d <= HOTSPOT_RADIUS_M) {
+          touched.add(hs.id)
+          risk += ((HOTSPOT_RADIUS_M - d) / HOTSPOT_RADIUS_M) * hs.weight
+        }
+      })
+    })
+
+    const duration = route.legs[0]?.duration?.value ?? Infinity
+    return { idx, touchedCount: touched.size, risk, duration }
+  }).filter((r) => Number.isFinite(r.duration))
+
+  return scored.sort((a, b) =>
+    a.touchedCount !== b.touchedCount
+      ? a.touchedCount - b.touchedCount
+      : a.risk !== b.risk
+      ? a.risk - b.risk
+      : a.duration - b.duration,
+  )
+}
+
 function rankRoutesByDuration(routes: DirectionsResultLike['routes']): Array<{ idx: number }> {
   return routes
     .map((route, idx) => ({ idx, duration: route.legs[0]?.duration?.value ?? Infinity }))
@@ -1003,7 +1101,9 @@ function rankRoutesByDuration(routes: DirectionsResultLike['routes']): Array<{ i
     .sort((a, b) => a.duration - b.duration)
 }
 
-
+function pickSafestRoute(routes: DirectionsResultLike['routes']): number {
+  return rankRoutesBySafety(routes)[0]?.idx ?? 0
+}
 
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
@@ -1020,9 +1120,10 @@ function Toggle({ on, onToggle, color, label }: { on: boolean; onToggle: () => v
         border: 'none',
         borderRadius: 10,
         padding: 0,
-        background: on ? color : 'rgba(255,255,255,0.1)',
+        background: on ? color : 'rgba(128,128,128,0.25)',
         cursor: 'pointer',
         position: 'relative',
+        flexShrink: 0,
       }}
     >
       <span
@@ -1044,12 +1145,14 @@ function HeatmapPanel({
   incidents,
   selectedId,
   showMarkers,
+  T,
   onToggleMarkers,
   onSelectIncident,
 }: {
   incidents: Incident[]
   selectedId: number | null
   showMarkers: boolean
+  T: Theme
   onToggleMarkers: () => void
   onSelectIncident: (incident: Incident) => void
 }) {
@@ -1062,11 +1165,11 @@ function HeatmapPanel({
           justifyContent: 'space-between',
           marginBottom: 14,
           padding: '8px 12px',
-          background: 'rgba(255,255,255,0.04)',
+          background: T.toggleRowBg,
           borderRadius: 8,
         }}
       >
-        <span style={{ fontSize: 12, color: 'rgba(232,228,220,0.6)' }}>Markers</span>
+        <span style={{ fontSize: 12, color: T.textMuted }}>Markers</span>
         <Toggle on={showMarkers} onToggle={onToggleMarkers} color="#E24B4A" label="Toggle markers" />
       </div>
 
@@ -1075,6 +1178,7 @@ function HeatmapPanel({
         return (
           <button
             key={incident.id}
+            className="incident-btn"
             onClick={() => onSelectIncident(incident)}
             style={{
               width: '100%',
@@ -1083,9 +1187,9 @@ function HeatmapPanel({
               marginBottom: 6,
               borderRadius: 8,
               cursor: 'pointer',
-              color: '#e8e4dc',
-              background: selected ? 'rgba(226,75,74,0.1)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${selected ? 'rgba(226,75,74,0.4)' : 'rgba(255,255,255,0.06)'}`,
+              color: T.text,
+              background: selected ? T.itemBgSelected : T.itemBg,
+              border: `1px solid ${selected ? T.itemBorderSelected : T.itemBorder}`,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -1096,6 +1200,7 @@ function HeatmapPanel({
                   borderRadius: '50%',
                   background: SEVERITY_META[incident.severity].color,
                   display: 'inline-block',
+                  flexShrink: 0,
                 }}
               />
               <span style={{ flex: 1, fontSize: 12, lineHeight: 1.35 }}>{incident.location}</span>
@@ -1103,7 +1208,7 @@ function HeatmapPanel({
                 {SEVERITY_META[incident.severity].label}
               </span>
             </div>
-            <div style={{ display: 'flex', gap: 10, paddingLeft: 16, fontSize: 10, color: 'rgba(232,228,220,0.4)' }}>
+            <div style={{ display: 'flex', gap: 10, paddingLeft: 16, fontSize: 10, color: T.textFaint }}>
               <span>{incident.count} incidents</span>
               <span>{incident.camera}</span>
             </div>
@@ -1127,6 +1232,8 @@ function RoutePanel({
   canCalc,
   btnBg,
   btnColor,
+  T,
+  inputStyle,
   onOriginChange,
   onDestinationChange,
   onTravelModeChange,
@@ -1147,6 +1254,8 @@ function RoutePanel({
   canCalc: boolean
   btnBg: string
   btnColor: string
+  T: Theme
+  inputStyle: CSSProperties
   onOriginChange: (v: string) => void
   onDestinationChange: (v: string) => void
   onTravelModeChange: (v: TravelMode) => void
@@ -1157,7 +1266,7 @@ function RoutePanel({
 }) {
   return (
     <>
-      <label htmlFor="origin" style={{ display: 'block', marginBottom: 6, fontSize: 11, color: 'rgba(232,228,220,0.45)' }}>
+      <label htmlFor="origin" style={{ display: 'block', marginBottom: 6, fontSize: 11, color: T.subText }}>
         FROM
       </label>
       <input
@@ -1165,10 +1274,10 @@ function RoutePanel({
         value={origin}
         onChange={(e) => onOriginChange(e.target.value)}
         placeholder="e.g. Studentski grad, Sofia"
-        style={INPUT_STYLE}
+        style={inputStyle}
       />
 
-      <label htmlFor="destination" style={{ display: 'block', margin: '12px 0 6px', fontSize: 11, color: 'rgba(232,228,220,0.45)' }}>
+      <label htmlFor="destination" style={{ display: 'block', margin: '12px 0 6px', fontSize: 11, color: T.subText }}>
         TO
       </label>
       <input
@@ -1176,18 +1285,19 @@ function RoutePanel({
         value={destination}
         onChange={(e) => onDestinationChange(e.target.value)}
         placeholder="e.g. NDK, Sofia"
-        style={INPUT_STYLE}
+        style={inputStyle}
       />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
         <button
+          className={mapPickMode === 'origin' ? 'pick-origin-active' : ''}
           onClick={() => onPickMode(mapPickMode === 'origin' ? null : 'origin')}
           style={{
             padding: '8px 0',
             borderRadius: 8,
-            border: `1px solid ${mapPickMode === 'origin' ? 'rgba(59,109,17,0.55)' : 'rgba(255,255,255,0.1)'}`,
-            background: mapPickMode === 'origin' ? 'rgba(59,109,17,0.2)' : 'rgba(255,255,255,0.04)',
-            color: '#e8e4dc',
+            border: `1px solid ${mapPickMode === 'origin' ? T.pickOriginBorder : T.inputBorder}`,
+            background: mapPickMode === 'origin' ? T.pickOriginBg : T.itemBg,
+            color: T.pickText,
             cursor: 'pointer',
             fontSize: 11,
             fontWeight: 600,
@@ -1196,13 +1306,14 @@ function RoutePanel({
           Pick FROM on map
         </button>
         <button
+          className={mapPickMode === 'destination' ? 'pick-dest-active' : ''}
           onClick={() => onPickMode(mapPickMode === 'destination' ? null : 'destination')}
           style={{
             padding: '8px 0',
             borderRadius: 8,
-            border: `1px solid ${mapPickMode === 'destination' ? 'rgba(226,75,74,0.55)' : 'rgba(255,255,255,0.1)'}`,
-            background: mapPickMode === 'destination' ? 'rgba(226,75,74,0.2)' : 'rgba(255,255,255,0.04)',
-            color: '#e8e4dc',
+            border: `1px solid ${mapPickMode === 'destination' ? T.pickDestBorder : T.inputBorder}`,
+            background: mapPickMode === 'destination' ? T.pickDestBg : T.itemBg,
+            color: T.pickText,
             cursor: 'pointer',
             fontSize: 11,
             fontWeight: 600,
@@ -1213,22 +1324,22 @@ function RoutePanel({
       </div>
 
       {mapPickMode && (
-        <div style={{ marginTop: 8, fontSize: 10, color: 'rgba(232,228,220,0.55)' }}>
+        <div style={{ marginTop: 8, fontSize: 10, color: T.subText }}>
           Click the map to set {mapPickMode === 'origin' ? 'FROM' : 'TO'}.
         </div>
       )}
 
-      <label htmlFor="travel-mode" style={{ display: 'block', margin: '12px 0 6px', fontSize: 11, color: 'rgba(232,228,220,0.45)' }}>
+      <label htmlFor="travel-mode" style={{ display: 'block', margin: '12px 0 6px', fontSize: 11, color: T.subText }}>
         TRAVEL MODE
       </label>
       <select
         id="travel-mode"
         value={travelMode}
         onChange={(e) => onTravelModeChange(e.target.value as TravelMode)}
-        style={INPUT_STYLE}
+        style={inputStyle}
       >
-        <option value="DRIVING" style={{ color: '#111' }}>Car</option>
-        <option value="WALKING" style={{ color: '#111' }}>Walking</option>
+        <option value="DRIVING">Car</option>
+        <option value="WALKING">Walking</option>
       </select>
 
       <div
@@ -1240,13 +1351,13 @@ function RoutePanel({
           marginTop: 12,
           marginBottom: 12,
           borderRadius: 8,
-          background: avoidDanger ? 'rgba(99,153,34,0.08)' : 'rgba(255,255,255,0.04)',
-          border: `1px solid ${avoidDanger ? 'rgba(99,153,34,0.25)' : 'rgba(255,255,255,0.06)'}`,
+          background: avoidDanger ? T.avoidBgOn : T.avoidBgOff,
+          border: `1px solid ${avoidDanger ? T.avoidBorderOn : T.avoidBorderOff}`,
         }}
       >
         <div>
-          <div style={{ fontSize: 12, fontWeight: 500 }}>Avoid dangerous intersections</div>
-          <div style={{ fontSize: 10, color: 'rgba(232,228,220,0.45)' }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: T.text }}>Avoid dangerous intersections</div>
+          <div style={{ fontSize: 10, color: T.avoidHintText }}>
             {`May add 2 to 5 min | skips ${highRiskCount} high-risk areas`}
           </div>
         </div>
@@ -1259,17 +1370,18 @@ function RoutePanel({
             marginBottom: 12,
             padding: '10px 12px',
             borderRadius: 8,
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: T.itemBg,
+            border: `1px solid ${T.itemBorder}`,
           }}
         >
-          <div style={{ color: 'rgba(232,228,220,0.72)', fontSize: 11, lineHeight: 1.5 }}>
+          <div style={{ color: T.avoidBodyText, fontSize: 11, lineHeight: 1.5 }}>
             Hotspots are treated as a 50m no-go zone when Safe Route is on.
           </div>
         </div>
       )}
 
       <button
+        className="btn-primary"
         onClick={onCalcRoute}
         disabled={!canCalc}
         style={{
@@ -1285,10 +1397,9 @@ function RoutePanel({
         {routeLoading ? 'Calculating...' : 'Find routes'}
       </button>
 
-      {/* Route legend — shown when we have results */}
       {routeInfos.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 11, color: 'rgba(232,228,220,0.45)', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, color: T.subText, marginBottom: 8 }}>
             ROUTES FOUND
           </div>
           {routeInfos.map((info) => {
@@ -1296,6 +1407,7 @@ function RoutePanel({
             return (
               <div
                 key={info.rank}
+                className="route-card"
                 style={{
                   marginBottom: 8,
                   padding: '10px 12px',
@@ -1305,7 +1417,6 @@ function RoutePanel({
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  {/* Color swatch */}
                   <span
                     style={{
                       display: 'inline-block',
@@ -1320,11 +1431,11 @@ function RoutePanel({
                     {cfg.label}
                   </span>
                 </div>
-                <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'rgba(232,228,220,0.65)' }}>
+                <div style={{ display: 'flex', gap: 14, fontSize: 11, color: T.textMuted }}>
                   <span>{info.distance}</span>
                   <span>{info.duration}</span>
                   {avoidDanger && (
-                    <span style={{ color: info.avoided > 0 ? '#639922' : 'rgba(232,228,220,0.4)' }}>
+                    <span style={{ color: info.avoided > 0 ? '#639922' : T.textFaint }}>
                       {info.avoided} avoided
                     </span>
                   )}
@@ -1336,7 +1447,10 @@ function RoutePanel({
       )}
 
       {routeError && (
-        <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(226,75,74,0.1)', color: '#E24B4A', fontSize: 12 }}>
+        <div
+          className="route-error"
+          style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(226,75,74,0.1)', color: '#E24B4A', fontSize: 12 }}
+        >
           {routeError}
         </div>
       )}
@@ -1344,7 +1458,7 @@ function RoutePanel({
       {(routeInfos.length > 0 || routeError) && (
         <button
           onClick={onClearRoute}
-          style={{ width: '100%', marginTop: 10, padding: '9px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'rgba(232,228,220,0.6)', cursor: 'pointer' }}
+          style={{ width: '100%', marginTop: 10, padding: '9px 0', borderRadius: 8, border: `1px solid ${T.clearBorder}`, background: 'none', color: T.clearText, cursor: 'pointer' }}
         >
           Clear routes
         </button>
