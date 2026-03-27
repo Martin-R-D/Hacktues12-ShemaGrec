@@ -54,6 +54,8 @@ def parse_args():
                    help="Save annotated output video")
     p.add_argument("--no-show",   action="store_true",
                    help="Disable live window (headless)")
+    p.add_argument("--no-path-dev",    action="store_true",
+                   help="Disable path-deviation detection (shorthand for --disable-factors path)")
     p.add_argument("--disable-factors", default="",
                    help=("Comma-separated factors to disable: "
                          "overlap,proximity,decel,converge,path,nonveh,all"))
@@ -67,7 +69,10 @@ if __name__ == "__main__":
     args   = parse_args()
     cam_id, coords = args.location.split("|")
     lat_s,  lon_s  = coords.split(",")
-    apply_factor_toggles(args.disable_factors, args.enable_factors)
+    disable = args.disable_factors
+    if args.no_path_dev:
+        disable = f"{disable},path" if disable else "path"
+    apply_factor_toggles(disable, args.enable_factors)
 
     detector = NearCrashDetector(
         source      = args.source,

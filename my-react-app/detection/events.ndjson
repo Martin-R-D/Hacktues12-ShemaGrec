@@ -1,8 +1,18 @@
 [
   {
+    "risk_weight": 2169,
+    "cord_x": 42.4978,
+    "cord_y": 27.4674
+  },
+  {
     "risk_weight": 353,
     "cord_x": -3.1278,
     "cord_y": 54.5074
+  },
+  {
+    "risk_weight": 88,
+    "cord_x": 0.0,
+    "cord_y": 0.0
   },
   {
     "risk_weight": 48,

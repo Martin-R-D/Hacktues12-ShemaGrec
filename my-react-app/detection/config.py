@@ -1,14 +1,16 @@
 import cv2
 
-SMALL_BOX_RATIO_HARD_CUTOFF = 0.20
-SMALL_BOX_RATIO_SOFT_CUTOFF = 0.45
+SMALL_BOX_AREA_HARD_CUTOFF_PX      = 2500   # boxes smaller than this (px²) → IoU forced to 0
+SMALL_BOX_AREA_SOFT_CUTOFF_PX      = 6000   # boxes between hard and soft get IoU scaled down
+IOU_FALSE_POSITIVE_THRESHOLD       = 0.90
+PROXIMITY_FALSE_POSITIVE_THRESHOLD = 0.10
 
 MERGE_RADIUS_M = 50.0
 
 
 class Config:
     # Model
-    MODEL_WEIGHTS         = "yolov8m.pt"
+    MODEL_WEIGHTS         = "yolov8m.pt"  # export once: cd detection && python -c "from ultralytics import YOLO; YOLO('yolov8m.pt').export(format='onnx')"
     CONFIDENCE_THRESHOLD  = 0.15
     IOU_NMS_THRESHOLD     = 0.30
     DEVICE                = "cuda" if __import__("torch").cuda.is_available() else "cpu"
@@ -21,6 +23,11 @@ class Config:
     # History
     TRACK_HISTORY_FRAMES  = 40
 
+    # Frame diagonal in pixels — set automatically at startup by the detector.
+    # All thresholds below marked "× diag" are ratios of this value, so they
+    # scale to any resolution automatically.
+    FRAME_DIAG            = 2203.0  # default for 1920×1080; overwritten at runtime
+
     # ── Rule 1: Overlap + proximity ──────────────────────────────────────
     IOU_ALERT_THRESHOLD         = 0.10
     PROXIMITY_RATIO_THRESHOLD   = 0.10
@@ -28,26 +35,34 @@ class Config:
     ENABLE_PROXIMITY_FACTOR     = True
 
     # ── Rule 2: Deceleration ─────────────────────────────────────────────
-    DECEL_THRESHOLD             = 32.0
+    DECEL_THRESHOLD_RATIO       = 0.015   # × diag per frame² (was 32px at 1080p)
+    DECEL_CONFIRM_FRAMES        = 3       # consecutive frames that must show hard braking
     ENABLE_DECEL_FACTOR         = True
 
     # ── Rule 3: Trajectory convergence ───────────────────────────────────
     CONVERGENCE_ANGLE_THRESHOLD = 30.0
-    MIN_CLOSING_SPEED_PX        = 5.0    # px/frame  — used when no calibration
-    MIN_CLOSING_SPEED_MS        = 0.05   # m/frame ≈ 1.5 m/s — used when calibrated
+    CONVERGENCE_MAX_DIST_RATIO  = 0.07    # × diag — max distance between vehicles (was 300px)
+    MIN_CLOSING_SPEED_RATIO     = 0.0023  # × diag per frame (was 5px)
+    MIN_CLOSING_SPEED_MS        = 0.05    # m/frame ≈ 1.5 m/s — used when calibrated
     ENABLE_CONVERGENCE_FACTOR   = True
 
     # ── Rule 4: Path deviation ────────────────────────────────────────────
     PATH_FIT_MIN_FRAMES         = 12
-    PATH_DEVIATION_THRESHOLD    = 55.0
+    PATH_DEVIATION_RATIO        = 0.025   # × diag (was 55px)
     ENABLE_PATH_DEVIATION       = True
 
     # ── Rule 5: Non-vehicle proximity to cars ─────────────────────────────
     NON_VEH_DISTANCE_DROP_RATIO = 0.40
     NON_VEH_WINDOW_FRAMES       = 10
-    NON_VEH_MIN_ALERT_DIST_ABS  = 35.0
-    NON_VEH_MAX_DIST_ABS        = 220.0
-    ENABLE_NONVEH_PROXIMITY     = True
+    NON_VEH_MIN_ALERT_DIST_RATIO = 0.016  # × diag (was 35px)
+    NON_VEH_MAX_DIST_RATIO       = 0.10   # × diag (was 220px)
+    ENABLE_NONVEH_PROXIMITY      = True
+
+    # ── Convenience: threshold in actual pixels ──────────────────────────
+    @classmethod
+    def px(cls, ratio: float) -> float:
+        """Convert a diagonal-ratio threshold to pixels."""
+        return ratio * cls.FRAME_DIAG
 
     # Alert suppression
     ALERT_COOLDOWN_FRAMES = 15

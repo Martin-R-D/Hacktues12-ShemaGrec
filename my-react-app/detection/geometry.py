@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from config import Config, SMALL_BOX_RATIO_HARD_CUTOFF, SMALL_BOX_RATIO_SOFT_CUTOFF, IOU_FALSE_POSITIVE_THRESHOLD, PROXIMITY_FALSE_POSITIVE_THRESHOLD
+from config import Config, SMALL_BOX_AREA_HARD_CUTOFF_PX, SMALL_BOX_AREA_SOFT_CUTOFF_PX, IOU_FALSE_POSITIVE_THRESHOLD, PROXIMITY_FALSE_POSITIVE_THRESHOLD
 from models import TrackState
 
 
@@ -57,12 +57,12 @@ def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
     inter    = max(0, ix2 - ix1) * max(0, iy2 - iy1)
     raw_iou  = inter / (area_a + area_b - inter + 1e-6)
 
-    size_ratio = min(area_a, area_b) / max(area_a, area_b)
-    if size_ratio <= SMALL_BOX_RATIO_HARD_CUTOFF:
+    min_area = min(area_a, area_b)
+    if min_area <= SMALL_BOX_AREA_HARD_CUTOFF_PX:
         return 0.0
-    if size_ratio < SMALL_BOX_RATIO_SOFT_CUTOFF:
-        t = ((size_ratio - SMALL_BOX_RATIO_HARD_CUTOFF)
-             / (SMALL_BOX_RATIO_SOFT_CUTOFF - SMALL_BOX_RATIO_HARD_CUTOFF))
+    if min_area < SMALL_BOX_AREA_SOFT_CUTOFF_PX:
+        t = ((min_area - SMALL_BOX_AREA_HARD_CUTOFF_PX)
+             / (SMALL_BOX_AREA_SOFT_CUTOFF_PX - SMALL_BOX_AREA_HARD_CUTOFF_PX))
         return raw_iou * max(0.0, min(1.0, t))
     
     if raw_iou > IOU_FALSE_POSITIVE_THRESHOLD:
@@ -118,7 +118,25 @@ def path_deviation(track: TrackState) -> Optional[float]:
     n = len(track.centers)
     if n < Config.PATH_FIT_MIN_FRAMES:
         return None
+
+    # Skip early frames where the car is only partially in frame.
+    # A partial-entry car has a growing bounding box whose center drifts,
+    # warping the trajectory.  Find the first frame where box area reaches
+    # 85% of peak and only use centers from that point onward.
+    boxes = list(track.boxes)
+    areas = [(b[2] - b[0]) * (b[3] - b[1]) for b in boxes]
+    peak_area = max(areas)
+    stable_start = 0
+    for i, a in enumerate(areas):
+        if a >= 0.14 * peak_area:
+            stable_start = i
+            break
+
     pts = np.array(list(track.centers))
+    pts = pts[stable_start:]
+    if len(pts) < Config.PATH_FIT_MIN_FRAMES:
+        return None
+
     fit_pts = pts[:-3]
     test_pt = pts[-1]
     if len(fit_pts) < 2:

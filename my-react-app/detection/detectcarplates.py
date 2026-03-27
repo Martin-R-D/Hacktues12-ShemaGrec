@@ -24,6 +24,13 @@ from ultralytics import YOLO
 from config import Config
 
 try:
+    from db import PlateDB
+    _DB_OK = True
+except Exception as e:
+    _DB_OK = False
+    print(f"[WARN] Could not import PlateDB: {e}")
+
+try:
     import easyocr
     _EASYOCR_OK = True
 except ImportError:
@@ -165,22 +172,41 @@ class PlateDetector:
         self.plate_cache  : dict[int, str] = {}   # tid → last plate text
         self.ocr_cooldown : dict[int, int] = {}   # tid → frame of last OCR
 
+        self.db: PlateDB | None = None
+        if _DB_OK:
+            try:
+                self.db = PlateDB()
+            except Exception as e:
+                print(f"[WARN] DB unavailable — running without database. ({e})")
+
     # ── Loop ──────────────────────────────────────────────────────────────
 
     def run(self):
         print("[INFO] Running ... press 'q' to quit.")
-        while True:
-            ret, frame = self.cap.read()
-            if not ret:
-                break
-            self.frame_idx += 1
-            annotated = self._process_frame(frame)
-            if self.show:
-                cv2.imshow("Plate Detector", annotated)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+        if self.show:
+            cv2.namedWindow("Plate Detector", cv2.WINDOW_NORMAL)
+            w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if w >= 1280 and h >= 720:
+                cv2.resizeWindow("Plate Detector", 1280, 720)
+            else:
+                cv2.resizeWindow("Plate Detector", w, h)
+        try:
+            while True:
+                ret, frame = self.cap.read()
+                if not ret:
                     break
-        self.cap.release()
-        cv2.destroyAllWindows()
+                self.frame_idx += 1
+                annotated = self._process_frame(frame)
+                if self.show:
+                    cv2.imshow("Plate Detector", annotated)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
+        finally:
+            self.cap.release()
+            cv2.destroyAllWindows()
+            if self.db:
+                self.db.close()
 
     # ── Per-frame ─────────────────────────────────────────────────────────
 
@@ -201,4 +227,79 @@ class PlateDetector:
         if results[0].boxes is None or results[0].boxes.id is None:
             return out
 
-        boxes = results[0].b
+        boxes = results[0].boxes.xyxy.cpu().numpy()
+        ids   = results[0].boxes.id.cpu().numpy().astype(int)
+
+        for box, tid in zip(boxes, ids):
+            x1, y1, x2, y2 = (int(v) for v in box)
+            color = (0, 220, 80)
+
+            self._draw_corners(out, x1, y1, x2, y2, color)
+
+            last_ocr = self.ocr_cooldown.get(tid, -self.OCR_INTERVAL)
+            if self.frame_idx - last_ocr >= self.OCR_INTERVAL:
+                self.ocr_cooldown[tid] = self.frame_idx
+                crop = frame[y1:y2, x1:x2]
+                if crop.size > 0:
+                    region = find_plate_region(crop)
+                    if region is not None:
+                        px1, py1, px2, py2 = region
+                        plate_crop = crop[py1:py2, px1:px2]
+                        text = read_plate_text(plate_crop, self.reader)
+                        if text:
+                            self.plate_cache[tid] = text
+                            if self.db:
+                                self.db.record(text, event_type="SEEN")
+                        cv2.rectangle(
+                            out,
+                            (x1 + px1, y1 + py1),
+                            (x1 + px2, y1 + py2),
+                            (0, 230, 230), 2,
+                        )
+
+            plate_text = self.plate_cache.get(tid, "")
+            label = f"#{tid}" + (f"  {plate_text}" if plate_text else "")
+            self._draw_label_chip(out, label, x1, y1 - 8, color)
+
+        cv2.putText(
+            out, f"FRAME {self.frame_idx:05d}",
+            (10, 28), Config.FONT, 0.55, (120, 200, 255), 1, cv2.LINE_AA,
+        )
+        return out
+
+    # ── Drawing helpers ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _draw_corners(img, x1, y1, x2, y2, color, thickness=2, ratio=0.28):
+        lx = max(8, int((x2 - x1) * ratio))
+        ly = max(8, int((y2 - y1) * ratio))
+        for p0, corner, p1 in [
+            ((x1, y1 + ly), (x1, y1),  (x1 + lx, y1)),
+            ((x2 - lx, y1), (x2, y1),  (x2, y1 + ly)),
+            ((x1, y2 - ly), (x1, y2),  (x1 + lx, y2)),
+            ((x2 - lx, y2), (x2, y2),  (x2, y2 - ly)),
+        ]:
+            cv2.line(img, p0, corner, color, thickness, cv2.LINE_AA)
+            cv2.line(img, corner, p1,  color, thickness, cv2.LINE_AA)
+
+    @staticmethod
+    def _draw_label_chip(img, text, x, y, color, scale=0.52, thickness=1):
+        (tw, th), bl = cv2.getTextSize(text, Config.FONT, scale, thickness)
+        pad = 3
+        overlay = img.copy()
+        cv2.rectangle(overlay, (x - pad, y - th - pad), (x + tw + pad, y + bl), (8, 8, 20), -1)
+        cv2.addWeighted(overlay, 0.72, img, 0.28, 0, img)
+        cv2.line(img, (x - pad, y + bl), (x + tw + pad, y + bl), color, 1, cv2.LINE_AA)
+        cv2.putText(img, text, (x, y), Config.FONT, scale, color, thickness, cv2.LINE_AA)
+
+
+# ── Entry point ───────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description="License plate detector")
+    p.add_argument("--source", required=True,
+                   help="Camera index (0, 1…), video file, or RTSP URL")
+    p.add_argument("--no-show", action="store_true", help="Disable display window")
+    args = p.parse_args()
+
+    PlateDetector(source=args.source, show=not args.no_show).run()

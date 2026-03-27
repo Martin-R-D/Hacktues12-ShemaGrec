@@ -1,0 +1,17 @@
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+# Install deps (postinstall fetches the Valhalla native binary)
+COPY package.json package-lock.json ./
+RUN npm ci && npm install -g tsx
+
+# Copy server source + valhalla config
+COPY server.ts config.json tsconfig.json tsconfig.node.json ./
+
+# Tiles are mounted as a volume (see docker-compose.yml) so they
+# don't bloat the image and can be rebuilt independently.
+
+EXPOSE 8004
+
+CMD ["tsx", "server.ts"]

@@ -51,7 +51,9 @@ class NearCrashDetector:
         self.width  = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         Config.FRAME_DIAG = float(np.hypot(self.width, self.height))
-        print(f"[INFO] Resolution {self.width}×{self.height}  diag={Config.FRAME_DIAG:.0f}px")
+        # UI scale factor: 1.0 at 1080p, smaller for low-res, larger for 4K
+        self.ui_scale = max(0.4, min(2.0, Config.FRAME_DIAG / 2203.0))
+        print(f"[INFO] Resolution {self.width}×{self.height}  diag={Config.FRAME_DIAG:.0f}px  ui_scale={self.ui_scale:.2f}")
         self.frame_idx = 0
 
         self.writer: Optional[cv2.VideoWriter] = None
@@ -82,7 +84,11 @@ class NearCrashDetector:
         print("[INFO] Running ... press 'q' to quit.")
         if self.show:
             cv2.namedWindow("Near-Crash Detector", cv2.WINDOW_NORMAL)
-            cv2.resizeWindow("Near-Crash Detector", 1280, 720)
+            # Don't stretch low-res videos — only resize if source is at least 720p
+            if self.width >= 1280 and self.height >= 720:
+                cv2.resizeWindow("Near-Crash Detector", 1280, 720)
+            else:
+                cv2.resizeWindow("Near-Crash Detector", self.width, self.height)
         t0 = time.time()
 
         while True:
@@ -261,11 +267,11 @@ class NearCrashDetector:
     def _draw_label_chip(img, text, x, y, color, scale=0.50, thickness=1):
         """Text label on a semi-transparent dark pill with a colored underline."""
         (tw, th), bl = cv2.getTextSize(text, Config.FONT, scale, thickness)
-        pad = 3
+        pad = max(2, int(3 * scale / 0.50))
         overlay = img.copy()
         cv2.rectangle(overlay, (x - pad, y - th - pad), (x + tw + pad, y + bl), (8, 8, 20), -1)
         cv2.addWeighted(overlay, 0.72, img, 0.28, 0, img)
-        cv2.line(img, (x - pad, y + bl), (x + tw + pad, y + bl), color, 1, cv2.LINE_AA)
+        cv2.line(img, (x - pad, y + bl), (x + tw + pad, y + bl), color, thickness, cv2.LINE_AA)
         cv2.putText(img, text, (x, y), Config.FONT, scale, color, thickness, cv2.LINE_AA)
 
     # ── Annotation ────────────────────────────────────────────────────────
@@ -277,6 +283,7 @@ class NearCrashDetector:
         events    : List[NearCrashEvent],
     ) -> np.ndarray:
         out       = frame.copy()
+        s         = self.ui_scale
         alert_ids = {tid for e in events for tid in e.involved_track_ids}
         pulse     = 0.5 + 0.5 * math.sin(self.frame_idx * 0.15)
 
@@ -309,8 +316,9 @@ class NearCrashDetector:
             # Glow layer for alert boxes (blurred bright outline added to frame)
             if is_alert:
                 glow_layer = np.zeros_like(out)
-                self._draw_corners(glow_layer, x1, y1, x2, y2, color, 4)
-                glow_layer = cv2.GaussianBlur(glow_layer, (21, 21), 0)
+                self._draw_corners(glow_layer, x1, y1, x2, y2, color, max(1, int(4 * s)))
+                blur_k = max(3, int(21 * s)) | 1  # must be odd
+                glow_layer = cv2.GaussianBlur(glow_layer, (blur_k, blur_k), 0)
                 out = cv2.add(out, glow_layer)
                 # Pulsing semi-transparent fill
                 overlay = out.copy()
@@ -319,13 +327,14 @@ class NearCrashDetector:
                 cv2.addWeighted(overlay, fill_alpha, out, 1.0 - fill_alpha, 0, out)
 
             # Corner-bracket box
-            self._draw_corners(out, x1, y1, x2, y2, color, 2)
+            self._draw_corners(out, x1, y1, x2, y2, color, max(1, int(2 * s)))
 
             # Label chip
             label = f"ID:{tid}"
             if Config.SHOW_VELOCITIES and is_vehicle:
                 label += f"  {t.speed:.1f}px/f"
-            self._draw_label_chip(out, label, x1, y1 - 8, color)
+            self._draw_label_chip(out, label, x1, y1 - int(8 * s), color,
+                                  scale=0.50 * s, thickness=max(1, int(s)))
 
             # Path deviation indicator
             dev = path_deviation(t) if Config.ENABLE_PATH_DEVIATION else None
@@ -337,21 +346,25 @@ class NearCrashDetector:
                     centered  = pts_arr[:-3] - mean
                     _, _, vt  = np.linalg.svd(centered)
                     direction = vt[0]
-                    p1 = (mean - direction * 60).astype(int)
-                    p2 = (mean + direction * 60).astype(int)
-                    cv2.line(out, tuple(p1), tuple(p2), (0, 220, 255), 1, cv2.LINE_AA)
-                    self._draw_label_chip(out, f"dev {dev:.0f}px", x1, y2 + 18,
-                                          (0, 220, 255), scale=0.42)
+                    line_len  = 60 * s
+                    p1 = (mean - direction * line_len).astype(int)
+                    p2 = (mean + direction * line_len).astype(int)
+                    cv2.line(out, tuple(p1), tuple(p2), (0, 220, 255), max(1, int(s)), cv2.LINE_AA)
+                    self._draw_label_chip(out, f"dev {dev:.0f}px", x1, y2 + int(18 * s),
+                                          (0, 220, 255), scale=0.42 * s, thickness=max(1, int(s)))
 
         # Frame / event HUD chip (bottom-right)
+        hud_scale = 0.44 * s
+        hud_thick = max(1, int(s))
         hud = f"FRAME {self.frame_idx:05d}  |  EVT {len(self.events):03d}"
-        (hw, hh), _ = cv2.getTextSize(hud, Config.FONT, 0.44, 1)
-        hx = self.width - hw - 10
-        hy = self.height - 10
+        (hw, hh), _ = cv2.getTextSize(hud, Config.FONT, hud_scale, hud_thick)
+        hx = self.width - hw - int(10 * s)
+        hy = self.height - int(10 * s)
         overlay = out.copy()
-        cv2.rectangle(overlay, (hx - 6, hy - hh - 4), (self.width - 4, hy + 4), (5, 5, 18), -1)
+        cv2.rectangle(overlay, (hx - int(6 * s), hy - hh - int(4 * s)),
+                       (self.width - int(4 * s), hy + int(4 * s)), (5, 5, 18), -1)
         cv2.addWeighted(overlay, 0.72, out, 0.28, 0, out)
-        cv2.putText(out, hud, (hx, hy), Config.FONT, 0.44, (100, 200, 255), 1, cv2.LINE_AA)
+        cv2.putText(out, hud, (hx, hy), Config.FONT, hud_scale, (100, 200, 255), hud_thick, cv2.LINE_AA)
 
         return out
 
