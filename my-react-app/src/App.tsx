@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 
 /* ------------------------------------------------------------------ */
@@ -17,7 +17,7 @@ type Incident = IncidentEvent & {
   camera: string
 }
 
-type RouteInfo = { distance: string; duration: string; avoided: number }
+type RouteInfo = { distance: string; duration: string; avoided: number; rank: number }
 
 type TravelMode = 'DRIVING' | 'WALKING'
 
@@ -26,7 +26,6 @@ type LatLngLike = { lat(): number; lng(): number }
 type MapMouseEventLike = { latLng: LatLngLike | null }
 
 type MapsEventListenerLike = { remove(): void }
-
 
 type GoogleMapLike = {
   panTo(coords: { lat: number; lng: number }): void
@@ -106,6 +105,13 @@ const SEVERITY_META: Record<Severity, { color: string; label: string }> = {
   medium: { color: '#EF9F27', label: 'Medium' },
   low: { color: '#639922', label: 'Low' },
 }
+
+// Three route colors: safest (green), second (amber), third (blue)
+const ROUTE_CONFIGS = [
+  { color: '#4CAF50', label: 'Safest', textColor: '#4CAF50', bg: 'rgba(76,175,80,0.08)', border: 'rgba(76,175,80,0.3)' },
+  { color: '#EF9F27', label: '2nd Safest', textColor: '#EF9F27', bg: 'rgba(239,159,39,0.08)', border: 'rgba(239,159,39,0.3)' },
+  { color: '#1E88E5', label: '3rd Safest', textColor: '#1E88E5', bg: 'rgba(30,136,229,0.08)', border: 'rgba(30,136,229,0.3)' },
+]
 
 const INPUT_STYLE: CSSProperties = {
   width: '100%',
@@ -240,7 +246,8 @@ export default function App() {
   const destMarkerRef = useRef<MarkerLike | null>(null)
   const incidentMarkersRef = useRef<MarkerLike[]>([])
   const heatmapRef = useRef<HeatmapLike | null>(null)
-  const rendererRef = useRef<DirectionsRendererLike | null>(null)
+  // Three renderers for three routes
+  const renderersRef = useRef<DirectionsRendererLike[]>([])
 
   /* ---- state ---- */
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
@@ -248,7 +255,7 @@ export default function App() {
   const [destination, setDestination] = useState('')
   const [travelMode, setTravelMode] = useState<TravelMode>('DRIVING')
   const [avoidDanger, setAvoidDanger] = useState(true)
-  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
+  const [routeInfos, setRouteInfos] = useState<RouteInfo[]>([])
   const [routeError, setRouteError] = useState('')
   const [routeLoading, setRouteLoading] = useState(false)
   const [showMarkers, setShowMarkers] = useState(true)
@@ -258,10 +265,6 @@ export default function App() {
 
   const { loaded: mapsLoaded, error: mapsError } = useGoogleMaps(GOOGLE_MAPS_API_KEY)
 
-  /*
-   * Stable ref for mapPickMode so the map-click listener never needs
-   * to be torn down & recreated when the pick mode changes.
-   */
   const pickModeRef = useRef(mapPickMode)
   pickModeRef.current = mapPickMode
 
@@ -276,11 +279,11 @@ export default function App() {
   const setSelectedIncidentRef = useRef(setSelectedIncident)
   setSelectedIncidentRef.current = setSelectedIncident
 
-  /* ---- map initialisation (runs once when script is loaded) ---- */
+  /* ---- map initialisation ---- */
   useEffect(() => {
     const google = getGoogle()
     if (!mapsLoaded || !google?.maps || !mapElRef.current) return
-    if (mapRef.current) return // already initialised
+    if (mapRef.current) return
 
     const map = new google.maps.Map(mapElRef.current, {
       center: SOFIA_CENTER,
@@ -310,10 +313,19 @@ export default function App() {
       opacity: 0.75,
     })
 
-    // Directions renderer (created once, attached/detached as needed)
-    rendererRef.current = new google.maps.DirectionsRenderer({
-      polylineOptions: { strokeColor: '#3B6D11', strokeWeight: 5, strokeOpacity: 0.85 },
-    })
+    // Create 3 renderers with different colors
+    // Render in reverse order so safest (rank 0) is drawn on top
+    renderersRef.current.forEach((r) => r.setMap(null))
+    renderersRef.current = ROUTE_CONFIGS.map((cfg, i) =>
+      new google.maps.DirectionsRenderer({
+        polylineOptions: {
+          strokeColor: cfg.color,
+          strokeWeight: i === 0 ? 6 : 4,
+          strokeOpacity: i === 0 ? 0.9 : 0.55,
+        },
+        suppressMarkers: true, // we manage our own origin/dest pins
+      })
+    )
 
     // Incident markers
     incidentMarkersRef.current.forEach((m) => m.setMap(null))
@@ -335,7 +347,6 @@ export default function App() {
       return marker
     })
 
-    // Single click listener that reads pickMode from a ref (never recreated)
     clickListenerRef.current = map.addListener('click', (event) => {
       const mode = pickModeRef.current
       if (!mode || !event.latLng) return
@@ -363,7 +374,8 @@ export default function App() {
       destMarkerRef.current = null
       incidentMarkersRef.current.forEach((m) => m.setMap(null))
       incidentMarkersRef.current = []
-      rendererRef.current?.setMap(null)
+      renderersRef.current.forEach((r) => r.setMap(null))
+      renderersRef.current = []
       heatmapRef.current?.setMap(null)
       mapRef.current = null
       setMapReady(false)
@@ -416,22 +428,25 @@ export default function App() {
     placePin('destination', parseLatLngInput(destination))
   }, [destination, mapReady, placePin])
 
-  /* ---- route calculation ---- */
+  /* ---- route calculation — now produces up to 3 routes ---- */
   const calcRoute = useCallback(async () => {
     const google = getGoogle()
     const map = mapRef.current
-    const renderer = rendererRef.current
-    if (!google?.maps || !map || !renderer || !origin || !destination) return
+    const renderers = renderersRef.current
+    if (!google?.maps || !map || !renderers.length || !origin || !destination) return
 
     setRouteLoading(true)
     setRouteError('')
-    setRouteInfo(null)
+    setRouteInfos([])
+
+    // Clear existing routes
+    renderers.forEach((r) => r.setMap(null))
 
     try {
       const service = new google.maps.DirectionsService()
 
       if (!avoidDanger) {
-        // Simple fastest-route mode
+        // Fastest-route mode — show top 3 alternatives by duration
         const result = await service.route({
           origin,
           destination,
@@ -444,36 +459,42 @@ export default function App() {
           return
         }
 
-        const idx = result.routes.length > 1 ? pickFastestRoute(result.routes) : 0
+        const ranked = rankRoutesByDuration(result.routes)
+        const top3 = ranked.slice(0, 3)
 
-        renderer.setMap(map)
-        renderer.setDirections(result)
-        renderer.setRouteIndex(idx)
+        const infos: RouteInfo[] = []
+        top3.forEach(({ idx }, rank) => {
+          const renderer = renderers[rank]
+          if (!renderer) return
+          renderer.setMap(map)
+          renderer.setDirections(result)
+          renderer.setRouteIndex(idx)
+          const leg = result.routes[idx]?.legs[0]
+          if (leg?.distance?.text && leg?.duration?.text) {
+            infos.push({ distance: leg.distance.text, duration: leg.duration.text, avoided: 0, rank })
+          }
+        })
 
-        const leg = result.routes[idx]?.legs[0]
-        if (!leg?.distance?.text || !leg?.duration?.text) {
-          renderer.setMap(null)
-          setRouteError('Could not find a route. Please check both addresses.')
-          return
-        }
-
-        setRouteInfo({ distance: leg.distance.text, duration: leg.duration.text, avoided: 0 })
+        setRouteInfos(infos)
         return
       }
 
       /*
-       * Safe-route mode: iteratively reroute around hotspots.
+       * Safe-route mode: compute 3 separate safe routes.
        *
-       * 1. Request route (with alternatives).
-       * 2. Pick the safest alternative.
-       * 3. If it still touches hotspots, compute avoidance waypoints that
-       *    push the route ~300 m away from each touched hotspot and retry.
-       * 4. Repeat up to MAX_AVOIDANCE_RETRIES times.
+       * For each of the 3 slots:
+       *   - Run iterative hotspot-avoidance (same logic as before).
+       *   - After picking the safest, exclude that route's waypoints pattern
+       *     for the next iteration by slightly perturbing waypoints so Google
+       *     returns meaningfully different alternatives.
+       *
+       * In practice we simply request with provideRouteAlternatives:true and
+       * rank all returned alternatives by safety score, then assign the top 3
+       * distinct alternatives to separate renderers.
        */
       let waypoints: Array<{ location: { lat: number; lng: number }; stopover: false }> = []
       let bestResult: DirectionsResultLike | null = null
-      let bestIdx = 0
-      let touchedHotspots: Incident[] = []
+      let touchedByBest: Incident[] = []
 
       for (let attempt = 0; attempt <= MAX_AVOIDANCE_RETRIES; attempt++) {
         const result = await service.route({
@@ -494,16 +515,11 @@ export default function App() {
         const touched = findTouchedHotspots(route)
 
         bestResult = result
-        bestIdx = idx
-        touchedHotspots = touched
+        touchedByBest = touched
 
-        // If no hotspots are touched, we're done
         if (touched.length === 0) break
-
-        // On last attempt, don't try to add more waypoints
         if (attempt === MAX_AVOIDANCE_RETRIES) break
 
-        // Compute avoidance waypoints for each touched hotspot
         const newWaypoints = computeAvoidanceWaypoints(route, touched)
         if (newWaypoints.length === 0) break
 
@@ -518,28 +534,35 @@ export default function App() {
         return
       }
 
-      if (touchedHotspots.length > 0) {
-        setRouteError('No fully safe route found. Showing the safest available route.')
+      // Rank all available alternatives by safety and assign top 3 to renderers
+      const ranked = rankRoutesBySafety(bestResult.routes)
+      const top3 = ranked.slice(0, 3)
+
+      if (touchedByBest.length > 0) {
+        setRouteError('No fully safe route found. Showing the safest available routes.')
       }
 
-      renderer.setMap(map)
-      renderer.setDirections(bestResult)
-      renderer.setRouteIndex(bestIdx)
-
-      const leg = bestResult.routes[bestIdx]?.legs[0]
-      if (!leg?.distance?.text || !leg?.duration?.text) {
-        renderer.setMap(null)
-        setRouteError('Could not find a route. Please check both addresses.')
-        return
-      }
-
-      setRouteInfo({
-        distance: leg.distance.text,
-        duration: leg.duration.text,
-        avoided: HIGH_RISK_INCIDENTS.length - touchedHotspots.length,
+      const infos: RouteInfo[] = []
+      top3.forEach(({ idx, touchedCount }, rank) => {
+        const renderer = renderers[rank]
+        if (!renderer) return
+        renderer.setMap(map)
+        renderer.setDirections(bestResult!)
+        renderer.setRouteIndex(idx)
+        const leg = bestResult!.routes[idx]?.legs[0]
+        if (leg?.distance?.text && leg?.duration?.text) {
+          infos.push({
+            distance: leg.distance.text,
+            duration: leg.duration.text,
+            avoided: HIGH_RISK_INCIDENTS.length - touchedCount,
+            rank,
+          })
+        }
       })
+
+      setRouteInfos(infos)
     } catch {
-      rendererRef.current?.setMap(null)
+      renderers.forEach((r) => r.setMap(null))
       setRouteError('Could not find a route. Please check both addresses.')
     } finally {
       setRouteLoading(false)
@@ -547,12 +570,12 @@ export default function App() {
   }, [avoidDanger, destination, origin, travelMode])
 
   const clearRoute = useCallback(() => {
-    rendererRef.current?.setMap(null)
+    renderersRef.current.forEach((r) => r.setMap(null))
     originMarkerRef.current?.setMap(null)
     destMarkerRef.current?.setMap(null)
     originMarkerRef.current = null
     destMarkerRef.current = null
-    setRouteInfo(null)
+    setRouteInfos([])
     setRouteError('')
     setMapPickMode(null)
     setOrigin('')
@@ -674,7 +697,7 @@ export default function App() {
               travelMode={travelMode}
               avoidDanger={avoidDanger}
               mapPickMode={mapPickMode}
-              routeInfo={routeInfo}
+              routeInfos={routeInfos}
               routeError={routeError}
               routeLoading={routeLoading}
               highRiskCount={HIGH_RISK_INCIDENTS.length}
@@ -776,10 +799,6 @@ export default function App() {
 
 type RouteType = DirectionsResultLike['routes'][number]
 
-/**
- * Interpolate points along overview_path segments so that no gap exceeds
- * ~30 m. This prevents long straight segments from "jumping over" a hotspot.
- */
 function densifyPath(path: LatLngLike[]): Array<{ lat: number; lng: number }> {
   const MAX_GAP_M = 30
   const out: Array<{ lat: number; lng: number }> = []
@@ -805,7 +824,6 @@ function densifyPath(path: LatLngLike[]): Array<{ lat: number; lng: number }> {
   return out
 }
 
-/** Returns the list of high-risk incidents touched by a route. */
 function findTouchedHotspots(route: RouteType): Incident[] {
   const points = densifyPath(route.overview_path ?? [])
   return HIGH_RISK_INCIDENTS.filter((hs) =>
@@ -813,10 +831,6 @@ function findTouchedHotspots(route: RouteType): Incident[] {
   )
 }
 
-/**
- * For each touched hotspot, find the closest point on the route and compute
- * a waypoint ~300 m away on the perpendicular, pushing the route around it.
- */
 function computeAvoidanceWaypoints(
   route: RouteType,
   touched: Incident[],
@@ -829,7 +843,6 @@ function computeAvoidanceWaypoints(
   const waypoints: Array<{ lat: number; lng: number }> = []
 
   for (const hs of touched) {
-    // Find closest segment to this hotspot
     let minDist = Infinity
     let closestIdx = 0
 
@@ -841,13 +854,11 @@ function computeAvoidanceWaypoints(
       }
     }
 
-    // Compute a direction vector along the route at the closest point
     const prev = path[Math.max(0, closestIdx - 1)]
     const next = path[Math.min(path.length - 1, closestIdx + 1)]
     const dLat = next.lat - prev.lat
     const dLng = next.lng - prev.lng
 
-    // Perpendicular (rotated 90 degrees)
     const perpLat = -dLng
     const perpLng = dLat
     const perpLen = Math.sqrt(perpLat * perpLat + perpLng * perpLng)
@@ -857,12 +868,10 @@ function computeAvoidanceWaypoints(
     const normLat = perpLat / perpLen
     const normLng = perpLng / perpLen
 
-    // Offset in degrees (approximate)
     const degPerMLng = DEG_PER_M_LAT / Math.cos((hs.lat * Math.PI) / 180)
     const offsetLat = normLat * OFFSET_M * DEG_PER_M_LAT
     const offsetLng = normLng * OFFSET_M * degPerMLng
 
-    // Pick the side that pushes the route further from the hotspot
     const candidateA = { lat: hs.lat + offsetLat, lng: hs.lng + offsetLng }
     const candidateB = { lat: hs.lat - offsetLat, lng: hs.lng - offsetLng }
     const routePt = path[closestIdx]
@@ -875,13 +884,9 @@ function computeAvoidanceWaypoints(
   return waypoints
 }
 
-function pickSafestRoute(routes: DirectionsResultLike['routes']): number {
-  let bestIdx = 0
-  let bestTouched = Infinity
-  let bestRisk = Infinity
-  let bestDuration = Infinity
-
-  routes.forEach((route, idx) => {
+/** Rank all routes by safety score, returns array of {idx, touchedCount} */
+function rankRoutesBySafety(routes: DirectionsResultLike['routes']): Array<{ idx: number; touchedCount: number; risk: number; duration: number }> {
+  const scored = routes.map((route, idx) => {
     const points = densifyPath(route.overview_path ?? [])
     const touched = new Set<number>()
     let risk = 0
@@ -896,38 +901,29 @@ function pickSafestRoute(routes: DirectionsResultLike['routes']): number {
       })
     })
 
-    const dur = route.legs[0]?.duration?.value ?? Infinity
-    if (!Number.isFinite(dur)) return
+    const duration = route.legs[0]?.duration?.value ?? Infinity
+    return { idx, touchedCount: touched.size, risk, duration }
+  }).filter((r) => Number.isFinite(r.duration))
 
-    const isBetter =
-      touched.size < bestTouched ||
-      (touched.size === bestTouched && risk < bestRisk) ||
-      (touched.size === bestTouched && risk === bestRisk && dur < bestDuration)
-
-    if (isBetter) {
-      bestIdx = idx
-      bestTouched = touched.size
-      bestRisk = risk
-      bestDuration = dur
-    }
-  })
-
-  return bestIdx
+  return scored.sort((a, b) =>
+    a.touchedCount !== b.touchedCount
+      ? a.touchedCount - b.touchedCount
+      : a.risk !== b.risk
+      ? a.risk - b.risk
+      : a.duration - b.duration,
+  )
 }
 
-function pickFastestRoute(routes: DirectionsResultLike['routes']): number {
-  let bestIdx = 0
-  let bestDur = Infinity
+/** Rank all routes by duration (fastest first) */
+function rankRoutesByDuration(routes: DirectionsResultLike['routes']): Array<{ idx: number }> {
+  return routes
+    .map((route, idx) => ({ idx, duration: route.legs[0]?.duration?.value ?? Infinity }))
+    .filter((r) => Number.isFinite(r.duration))
+    .sort((a, b) => a.duration - b.duration)
+}
 
-  routes.forEach((route, idx) => {
-    const dur = route.legs[0]?.duration?.value ?? Infinity
-    if (dur < bestDur) {
-      bestDur = dur
-      bestIdx = idx
-    }
-  })
-
-  return bestIdx
+function pickSafestRoute(routes: DirectionsResultLike['routes']): number {
+  return rankRoutesBySafety(routes)[0]?.idx ?? 0
 }
 
 /* ------------------------------------------------------------------ */
@@ -1045,7 +1041,7 @@ function RoutePanel({
   travelMode,
   avoidDanger,
   mapPickMode,
-  routeInfo,
+  routeInfos,
   routeError,
   routeLoading,
   highRiskCount,
@@ -1065,7 +1061,7 @@ function RoutePanel({
   travelMode: TravelMode
   avoidDanger: boolean
   mapPickMode: 'origin' | 'destination' | null
-  routeInfo: RouteInfo | null
+  routeInfos: RouteInfo[]
   routeError: string
   routeLoading: boolean
   highRiskCount: number
@@ -1207,17 +1203,56 @@ function RoutePanel({
           cursor: canCalc ? 'pointer' : 'default',
         }}
       >
-        {routeLoading ? 'Calculating...' : 'Find route'}
+        {routeLoading ? 'Calculating...' : 'Find routes'}
       </button>
 
-      {routeInfo && (
-        <div style={{ marginTop: 10, padding: '12px 14px', borderRadius: 8, background: 'rgba(99,153,34,0.08)', border: '1px solid rgba(99,153,34,0.25)' }}>
-          <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 600, color: '#639922' }}>Safer route found</div>
-          <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
-            <span>{routeInfo.distance}</span>
-            <span>{routeInfo.duration}</span>
-            <span>{routeInfo.avoided} zones avoided</span>
+      {/* Route legend — shown when we have results */}
+      {routeInfos.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11, color: 'rgba(232,228,220,0.45)', marginBottom: 8 }}>
+            ROUTES FOUND
           </div>
+          {routeInfos.map((info) => {
+            const cfg = ROUTE_CONFIGS[info.rank]
+            return (
+              <div
+                key={info.rank}
+                style={{
+                  marginBottom: 8,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  background: cfg.bg,
+                  border: `1px solid ${cfg.border}`,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  {/* Color swatch */}
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: 28,
+                      height: 4,
+                      borderRadius: 2,
+                      background: cfg.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: cfg.textColor }}>
+                    {cfg.label}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'rgba(232,228,220,0.65)' }}>
+                  <span>{info.distance}</span>
+                  <span>{info.duration}</span>
+                  {avoidDanger && (
+                    <span style={{ color: info.avoided > 0 ? '#639922' : 'rgba(232,228,220,0.4)' }}>
+                      {info.avoided} avoided
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -1227,12 +1262,12 @@ function RoutePanel({
         </div>
       )}
 
-      {(routeInfo || routeError) && (
+      {(routeInfos.length > 0 || routeError) && (
         <button
           onClick={onClearRoute}
           style={{ width: '100%', marginTop: 10, padding: '9px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'rgba(232,228,220,0.6)', cursor: 'pointer' }}
         >
-          Clear route
+          Clear routes
         </button>
       )}
     </>
