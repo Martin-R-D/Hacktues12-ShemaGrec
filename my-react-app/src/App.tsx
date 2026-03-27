@@ -1175,6 +1175,9 @@ function HeatmapPanel({
 
       {incidents.map((incident) => {
         const selected = selectedId === incident.id
+        // Get the specific color for this incident's severity (High: Red, Medium: Orange, Low: Green)
+        const severityColor = SEVERITY_META[incident.severity].color
+
         return (
           <button
             key={incident.id}
@@ -1188,8 +1191,11 @@ function HeatmapPanel({
               borderRadius: 8,
               cursor: 'pointer',
               color: T.text,
-              background: selected ? T.itemBgSelected : T.itemBg,
-              border: `1px solid ${selected ? T.itemBorderSelected : T.itemBorder}`,
+              // If selected, use the severity color with transparency; otherwise use default theme background
+              background: selected ? `${severityColor}1a` : T.itemBg,
+              // If selected, use the severity color for the border; otherwise use default theme border
+              border: `1px solid ${selected ? severityColor : T.itemBorder}`,
+              transition: 'all 0.2s ease',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -1198,14 +1204,29 @@ function HeatmapPanel({
                   width: 8,
                   height: 8,
                   borderRadius: '50%',
-                  background: SEVERITY_META[incident.severity].color,
+                  background: severityColor,
                   display: 'inline-block',
                   flexShrink: 0,
                 }}
               />
-              <span style={{ flex: 1, fontSize: 12, lineHeight: 1.35 }}>{incident.location}</span>
-              <span style={{ fontSize: 10, color: SEVERITY_META[incident.severity].color }}>
-                {SEVERITY_META[incident.severity].label}
+              <span 
+                style={{ 
+                  flex: 1, 
+                  fontSize: 12, 
+                  lineHeight: 1.35,
+                  fontWeight: selected ? 600 : 400 
+                }}
+              >
+                {incident.location}
+              </span>
+              <span 
+                style={{ 
+                  fontSize: 10, 
+                  fontWeight: 700,
+                  color: severityColor
+                }}
+              >
+                {SEVERITY_META[incident.severity].label.toUpperCase()}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 10, paddingLeft: 16, fontSize: 10, color: T.textFaint }}>

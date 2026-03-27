@@ -338,3 +338,15 @@ select:focus {
   border-color: rgba(226, 75, 74, 0.5) !important;
   outline: none;
 }
+
+.incident-btn {
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.incident-btn:hover {
+  transform: translateX(4px);
+  filter: brightness(1.2); /* Makes the background pop slightly on hover */
+}
