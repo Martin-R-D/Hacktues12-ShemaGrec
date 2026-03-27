@@ -74,10 +74,10 @@ async function calculateRoute(
   // Create an actor with config generated on previous step
   const actor = await Actor.fromConfigFile("config.json");
 
-  const compute = async (exclusionPoints?: { lat: number; lon: number }[]) => {
+  const compute = async (exclusionPoints?: { lat: number; lon: number}[], radius: number = 30) => {
     try {
       const exclude_polygons = exclusionPoints?.map((point) =>
-        pointToCircle(point.lat, point.lon, 30),
+        pointToCircle(point.lat, point.lon, radius ),
       );
       console.debug("Exclusion polygons:", exclude_polygons);
       const result = await actor.route({
@@ -86,8 +86,8 @@ async function calculateRoute(
           { lat: data.latB, lon: data.lngB },
         ],
         costing: data.travelMode === "drive" ? "auto" : "pedestrian",
-        exclude_polygons,
-        // exclude_locations: exclusionPoints,
+        // exclude_polygons,
+        exclude_locations: exclusionPoints,
       });
       return result;
     } catch (e) {
@@ -98,7 +98,7 @@ async function calculateRoute(
   };
 
   // Calculate a route
-  const withExclude = await compute(data.exclusion);
+  const withExclude = await compute(data.exclusion, 30);
   if (!withExclude) {
     return { route: await compute(), withExclusion: false };
   } else {
