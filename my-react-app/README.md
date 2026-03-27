@@ -2,6 +2,40 @@
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
+## Local Valhalla (pyvalhalla)
+
+The frontend in [src/App.tsx](src/App.tsx) sends route requests to:
+
+- `VITE_VALHALLA_ROUTE_URL` (defaults to `http://127.0.0.1:8002/route`)
+
+Run a local server that uses `pyvalhalla` directly:
+
+1. Install Python package (you said you will do this):
+
+```bash
+python -m pip install pyvalhalla
+```
+
+2. Put your Valhalla config file at `valhalla.json` in the project root, or pass a custom path.
+
+3. Start local server:
+
+```bash
+npm run valhalla:server
+```
+
+4. Start frontend:
+
+```bash
+npm run dev
+```
+
+Optional `.env`:
+
+```bash
+VITE_VALHALLA_ROUTE_URL=http://127.0.0.1:8002/route
+```
+
 Currently, two official plugins are available:
 
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
