@@ -45,6 +45,11 @@ type MarkerLike = {
 
 type HeatmapLike = { setMap(map: GoogleMapLike | null): void }
 
+type CircleLike = {
+  setMap(map: GoogleMapLike | null): void
+  setVisible(visible: boolean): void
+}
+
 type DirectionsResultLike = {
   routes: Array<{
     overview_path?: LatLngLike[]
@@ -72,6 +77,7 @@ type GoogleMapsApi = {
       route(options: object): Promise<DirectionsResultLike>
     }
     DirectionsRenderer: new (options: object) => DirectionsRendererLike
+    Circle: new (options: object) => CircleLike
     visualization: {
       HeatmapLayer: new (options: object) => HeatmapLike
     }
@@ -93,8 +99,9 @@ const INCIDENTS: IncidentEvent[] = rankingsData.map(r => ({
   weight: r.score,
 }))
 
-const HOTSPOT_RADIUS_M = 200
-const MAX_AVOIDANCE_RETRIES = 2
+const HOTSPOT_RADIUS_M = 350
+const MAX_AVOIDANCE_RETRIES = 8
+const ROUTE_CORRIDOR_KM = 15  // only consider hotspots within this distance of the route corridor
 
 const SEVERITY_META: Record<Severity, { color: string; label: string }> = {
   high: { color: '#E24B4A', label: 'High' },
@@ -164,6 +171,22 @@ function severityFromWeight(w: number): Severity {
   if (w >= 7) return 'high'
   if (w >= 4) return 'medium'
   return 'low'
+}
+
+/** Return only hotspots that are within ROUTE_CORRIDOR_KM of the straight
+ *  line between origin and destination and have a non-zero score. */
+function getCorridorHotspots(
+  o: { lat: number; lng: number },
+  d: { lat: number; lng: number },
+): Incident[] {
+  const corridorM = ROUTE_CORRIDOR_KM * 1000
+  const samples: Array<{ lat: number; lng: number }> = []
+  for (let t = 0; t <= 1; t += 0.1) {
+    samples.push({ lat: o.lat + (d.lat - o.lat) * t, lng: o.lng + (d.lng - o.lng) * t })
+  }
+  return ENRICHED_INCIDENTS.filter(
+    (hs) => hs.weight > 0 && samples.some((s) => haversineMeters(hs.lat, hs.lng, s.lat, s.lng) <= corridorM),
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -241,6 +264,7 @@ export default function App() {
   const originMarkerRef = useRef<MarkerLike | null>(null)
   const destMarkerRef = useRef<MarkerLike | null>(null)
   const incidentMarkersRef = useRef<MarkerLike[]>([])
+  const incidentCirclesRef = useRef<CircleLike[]>([])
   const heatmapRef = useRef<HeatmapLike | null>(null)
   // Three renderers for three routes
   const renderersRef = useRef<DirectionsRendererLike[]>([])
@@ -323,8 +347,9 @@ export default function App() {
       })
     )
 
-    // Incident markers
+    // Incident markers + radius circles
     incidentMarkersRef.current.forEach((m) => m.setMap(null))
+    incidentCirclesRef.current.forEach((c) => c.setMap(null))
     incidentMarkersRef.current = ENRICHED_INCIDENTS.map((inc) => {
       const marker = new google.maps.Marker({
         position: { lat: inc.lat, lng: inc.lng },
@@ -341,6 +366,20 @@ export default function App() {
       })
       marker.addListener('click', () => setSelectedIncidentRef.current(inc))
       return marker
+    })
+    incidentCirclesRef.current = ENRICHED_INCIDENTS.map((inc) => {
+      const color = SEVERITY_META[inc.severity].color
+      return new google.maps.Circle({
+        center: { lat: inc.lat, lng: inc.lng },
+        radius: HOTSPOT_RADIUS_M,
+        map,
+        strokeColor: color,
+        strokeOpacity: 0.7,
+        strokeWeight: 1,
+        fillColor: color,
+        fillOpacity: 0.12,
+        clickable: false,
+      })
     })
 
     clickListenerRef.current = map.addListener('click', (event) => {
@@ -370,6 +409,8 @@ export default function App() {
       destMarkerRef.current = null
       incidentMarkersRef.current.forEach((m) => m.setMap(null))
       incidentMarkersRef.current = []
+      incidentCirclesRef.current.forEach((c) => c.setMap(null))
+      incidentCirclesRef.current = []
       renderersRef.current.forEach((r) => r.setMap(null))
       renderersRef.current = []
       heatmapRef.current?.setMap(null)
@@ -379,9 +420,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapsLoaded])
 
-  /* ---- marker visibility ---- */
+  /* ---- marker + circle visibility ---- */
   useEffect(() => {
     incidentMarkersRef.current.forEach((m) => m.setVisible(showMarkers))
+    incidentCirclesRef.current.forEach((c) => c.setVisible(showMarkers))
   }, [showMarkers])
 
   /* ---- origin / destination pin markers ---- */
@@ -488,9 +530,39 @@ export default function App() {
        * rank all returned alternatives by safety score, then assign the top 3
        * distinct alternatives to separate renderers.
        */
+      // Filter hotspots to only those near the origin–destination corridor
+      const oCoords = parseLatLngInput(origin)
+      const dCoords = parseLatLngInput(destination)
+      const nearby = oCoords && dCoords ? getCorridorHotspots(oCoords, dCoords) : []
+
+      // Accumulate candidate routes across multiple API calls.
+      // Each candidate keeps a reference to its source result + index so
+      // we can bind it to a DirectionsRenderer later.
+      type Candidate = {
+        result: DirectionsResultLike
+        idx: number
+        risk: number
+        touchedCount: number
+        duration: number
+        key: string // dedup by rounded path
+      }
+
+      const candidates: Candidate[] = []
+      const seenKeys = new Set<string>()
+
+      // Build a rough dedup key from a route's overview path
+      const routeKey = (route: DirectionsResultLike['routes'][0]): string => {
+        const pts = route.overview_path ?? []
+        // Sample ~8 points along the path
+        const step = Math.max(1, Math.floor(pts.length / 8))
+        return pts
+          .filter((_, i) => i % step === 0)
+          .map((p) => `${p.lat().toFixed(3)},${p.lng().toFixed(3)}`)
+          .join('|')
+      }
+
       let waypoints: Array<{ location: { lat: number; lng: number }; stopover: false }> = []
-      let bestResult: DirectionsResultLike | null = null
-      let touchedByBest: Incident[] = []
+      let foundClean = false
 
       for (let attempt = 0; attempt <= MAX_AVOIDANCE_RETRIES; attempt++) {
         const result = await service.route({
@@ -502,21 +574,60 @@ export default function App() {
         })
 
         if (!result.routes.length) {
-          setRouteError('No routes returned. Please check both addresses.')
-          return
+          if (candidates.length === 0) {
+            setRouteError('No routes returned. Please check both addresses.')
+            return
+          }
+          break
         }
 
-        const idx = result.routes.length > 1 ? pickSafestRoute(result.routes) : 0
-        const route = result.routes[idx]
-        const touched = findTouchedHotspots(route)
+        // Score every route from this call and add new ones to the pool
+        for (let ri = 0; ri < result.routes.length; ri++) {
+          const route = result.routes[ri]
+          const key = routeKey(route)
+          if (seenKeys.has(key)) continue
+          seenKeys.add(key)
 
-        bestResult = result
-        touchedByBest = touched
+          const points = densifyPath(route.overview_path ?? [])
+          const touched = new Set<number>()
+          let risk = 0
+          points.forEach((p) => {
+            nearby.forEach((hs) => {
+              const d = haversineMeters(p.lat, p.lng, hs.lat, hs.lng)
+              if (d <= HOTSPOT_RADIUS_M) {
+                touched.add(hs.id)
+                risk += ((HOTSPOT_RADIUS_M - d) / HOTSPOT_RADIUS_M) * hs.weight
+              }
+            })
+          })
+
+          candidates.push({
+            result,
+            idx: ri,
+            risk,
+            touchedCount: touched.size,
+            duration: route.legs[0]?.duration?.value ?? Infinity,
+            key,
+          })
+
+          if (touched.size === 0) foundClean = true
+        }
+
+        // Stop early if we already have a clean route
+        if (foundClean) break
+
+        // Pick the best route so far to compute avoidance waypoints from
+        const best = [...candidates].sort((a, b) =>
+          a.touchedCount !== b.touchedCount ? a.touchedCount - b.touchedCount
+            : a.risk !== b.risk ? a.risk - b.risk
+            : a.duration - b.duration
+        )[0]
+        const bestRoute = best.result.routes[best.idx]
+        const touched = findTouchedHotspots(bestRoute, nearby)
 
         if (touched.length === 0) break
-        if (attempt === MAX_AVOIDANCE_RETRIES) break
 
-        const newWaypoints = computeAvoidanceWaypoints(route, touched)
+        const newWaypoints = computeAvoidanceWaypoints(bestRoute, touched)
         if (newWaypoints.length === 0) break
 
         waypoints = [
@@ -525,32 +636,36 @@ export default function App() {
         ]
       }
 
-      if (!bestResult) {
+      if (candidates.length === 0) {
         setRouteError('Could not find a route. Please check both addresses.')
         return
       }
 
-      // Rank all available alternatives by safety and assign top 3 to renderers
-      const ranked = rankRoutesBySafety(bestResult.routes)
-      const top3 = ranked.slice(0, 3)
+      // Rank entire pool and pick top 3
+      candidates.sort((a, b) =>
+        a.touchedCount !== b.touchedCount ? a.touchedCount - b.touchedCount
+          : a.risk !== b.risk ? a.risk - b.risk
+          : a.duration - b.duration
+      )
+      const top3 = candidates.slice(0, 3)
 
-      if (touchedByBest.length > 0) {
+      if (!foundClean) {
         setRouteError('No fully safe route found. Showing the safest available routes.')
       }
 
       const infos: RouteInfo[] = []
-      top3.forEach(({ idx, touchedCount }, rank) => {
+      top3.forEach((c, rank) => {
         const renderer = renderers[rank]
         if (!renderer) return
         renderer.setMap(map)
-        renderer.setDirections(bestResult!)
-        renderer.setRouteIndex(idx)
-        const leg = bestResult!.routes[idx]?.legs[0]
+        renderer.setDirections(c.result)
+        renderer.setRouteIndex(c.idx)
+        const leg = c.result.routes[c.idx]?.legs[0]
         if (leg?.distance?.text && leg?.duration?.text) {
           infos.push({
             distance: leg.distance.text,
             duration: leg.duration.text,
-            avoided: HIGH_RISK_INCIDENTS.length - touchedCount,
+            avoided: nearby.length - c.touchedCount,
             rank,
           })
         }
@@ -820,9 +935,9 @@ function densifyPath(path: LatLngLike[]): Array<{ lat: number; lng: number }> {
   return out
 }
 
-function findTouchedHotspots(route: RouteType): Incident[] {
+function findTouchedHotspots(route: RouteType, hotspots: Incident[]): Incident[] {
   const points = densifyPath(route.overview_path ?? [])
-  return HIGH_RISK_INCIDENTS.filter((hs) =>
+  return hotspots.filter((hs) =>
     points.some((p) => haversineMeters(p.lat, p.lng, hs.lat, hs.lng) <= HOTSPOT_RADIUS_M),
   )
 }
@@ -880,35 +995,6 @@ function computeAvoidanceWaypoints(
   return waypoints
 }
 
-/** Rank all routes by safety score, returns array of {idx, touchedCount} */
-function rankRoutesBySafety(routes: DirectionsResultLike['routes']): Array<{ idx: number; touchedCount: number; risk: number; duration: number }> {
-  const scored = routes.map((route, idx) => {
-    const points = densifyPath(route.overview_path ?? [])
-    const touched = new Set<number>()
-    let risk = 0
-
-    points.forEach((p) => {
-      HIGH_RISK_INCIDENTS.forEach((hs) => {
-        const d = haversineMeters(p.lat, p.lng, hs.lat, hs.lng)
-        if (d <= HOTSPOT_RADIUS_M) {
-          touched.add(hs.id)
-          risk += ((HOTSPOT_RADIUS_M - d) / HOTSPOT_RADIUS_M) * hs.weight
-        }
-      })
-    })
-
-    const duration = route.legs[0]?.duration?.value ?? Infinity
-    return { idx, touchedCount: touched.size, risk, duration }
-  }).filter((r) => Number.isFinite(r.duration))
-
-  return scored.sort((a, b) =>
-    a.touchedCount !== b.touchedCount
-      ? a.touchedCount - b.touchedCount
-      : a.risk !== b.risk
-      ? a.risk - b.risk
-      : a.duration - b.duration,
-  )
-}
 
 /** Rank all routes by duration (fastest first) */
 function rankRoutesByDuration(routes: DirectionsResultLike['routes']): Array<{ idx: number }> {
@@ -918,9 +1004,7 @@ function rankRoutesByDuration(routes: DirectionsResultLike['routes']): Array<{ i
     .sort((a, b) => a.duration - b.duration)
 }
 
-function pickSafestRoute(routes: DirectionsResultLike['routes']): number {
-  return rankRoutesBySafety(routes)[0]?.idx ?? 0
-}
+
 
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
