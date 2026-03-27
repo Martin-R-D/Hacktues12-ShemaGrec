@@ -368,15 +368,14 @@ export default function App() {
       return marker
     })
     incidentCirclesRef.current = ENRICHED_INCIDENTS.map((inc) => {
-      const color = SEVERITY_META[inc.severity].color
       return new google.maps.Circle({
         center: { lat: inc.lat, lng: inc.lng },
         radius: HOTSPOT_RADIUS_M,
         map,
-        strokeColor: color,
+        strokeColor: '#FFD600',
         strokeOpacity: 0.7,
         strokeWeight: 1,
-        fillColor: color,
+        fillColor: '#FFD600',
         fillOpacity: 0.12,
         clickable: false,
       })
