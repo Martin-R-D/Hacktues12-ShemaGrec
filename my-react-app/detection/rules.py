@@ -88,17 +88,18 @@ def evaluate_vehicle_pair(
 
     if Config.ENABLE_DECEL_FACTOR:
         for t, label in [(t_a, "A"), (t_b, "B")]:
-            if t.acceleration < -Config.DECEL_THRESHOLD:
+            if t.sustained_decel:
                 triggered.append(f"BRAKE_{label}(decel={t.acceleration:.1f}px/f2)")
 
     if Config.ENABLE_CONVERGENCE_FACTOR:
         ha, hb = t_a.heading, t_b.heading
-        if ha is not None and hb is not None:
+        dist = center_distance(t_a, t_b)
+        if ha is not None and hb is not None and dist <= Config.px(Config.CONVERGENCE_MAX_DIST_RATIO):
             angle_diff = abs((ha - hb + 180) % 360 - 180)
             cspd = closing_speed(t_a, t_b)
-            min_cspd = Config.MIN_CLOSING_SPEED_MS if is_calibrated() else Config.MIN_CLOSING_SPEED_PX
-            if angle_diff < Config.CONVERGENCE_ANGLE_THRESHOLD and cspd > min_cspd:
-                triggered.append(f"CONVERGE(angle={angle_diff:.0f}deg,cspd={cspd:.1f})")
+            min_cspd = Config.MIN_CLOSING_SPEED_MS if is_calibrated() else Config.px(Config.MIN_CLOSING_SPEED_RATIO)
+            if angle_diff > Config.CONVERGENCE_ANGLE_THRESHOLD and cspd > min_cspd:
+                triggered.append(f"CONVERGE(angle={angle_diff:.0f}deg,cspd={cspd:.1f},d={dist:.0f}px)")
 
     return triggered, iou, prox, ttc
 
@@ -111,7 +112,7 @@ def evaluate_path_deviation(track: TrackState) -> List[str]:
         return []
     track.recent_deviations.append(dev)
     if (len(track.recent_deviations) >= 3
-            and sum(1 for d in track.recent_deviations if d > Config.PATH_DEVIATION_THRESHOLD) >= 3):
+            and sum(1 for d in track.recent_deviations if d > Config.px(Config.PATH_DEVIATION_RATIO)) >= 3):
         return [f"PATH_DEV(dev={dev:.0f}px)"]
     return []
 
@@ -128,9 +129,9 @@ def evaluate_nonvehicle_proximity(
         return []
 
     dist_now = center_distance(nonveh, car)
-    if dist_now < Config.NON_VEH_MIN_ALERT_DIST_ABS:
+    if dist_now < Config.px(Config.NON_VEH_MIN_ALERT_DIST_RATIO):
         return []
-    if dist_now > Config.NON_VEH_MAX_DIST_ABS:
+    if dist_now > Config.px(Config.NON_VEH_MAX_DIST_RATIO):
         return []
 
     cn_old   = list(nonveh.centers)[-n]

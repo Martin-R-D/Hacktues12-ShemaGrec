@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from config import Config, SMALL_BOX_RATIO_HARD_CUTOFF, SMALL_BOX_RATIO_SOFT_CUTOFF
+from config import Config, SMALL_BOX_RATIO_HARD_CUTOFF, SMALL_BOX_RATIO_SOFT_CUTOFF, IOU_FALSE_POSITIVE_THRESHOLD, PROXIMITY_FALSE_POSITIVE_THRESHOLD
 from models import TrackState
 
 
@@ -40,6 +40,9 @@ def _to_world(x: float, y: float) -> Tuple[float, float]:
     return _H.transform(x, y) if _H else (x, y)
 
 
+# intersection over union
+# 0 - nothing in common
+# 1 - 100% match
 def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
     xa1, ya1, xa2, ya2 = box_a
     xb1, yb1, xb2, yb2 = box_b
@@ -61,6 +64,10 @@ def compute_iou(box_a: Tuple, box_b: Tuple) -> float:
         t = ((size_ratio - SMALL_BOX_RATIO_HARD_CUTOFF)
              / (SMALL_BOX_RATIO_SOFT_CUTOFF - SMALL_BOX_RATIO_HARD_CUTOFF))
         return raw_iou * max(0.0, min(1.0, t))
+    
+    if raw_iou > IOU_FALSE_POSITIVE_THRESHOLD:
+        return 0
+    
     return raw_iou
 
 
@@ -97,7 +104,14 @@ def compute_ttc(a: TrackState, b: TrackState, fps: float) -> Optional[float]:
 def proximity_ratio(a: TrackState, b: TrackState) -> float:
     dist     = center_distance(a, b)
     avg_diag = (a.diagonal + b.diagonal) / 2
-    return dist / (avg_diag + 1e-6)
+
+    res = dist / (avg_diag + 1e-6)
+    
+    if (res < PROXIMITY_FALSE_POSITIVE_THRESHOLD): 
+        return 9999
+    else:
+        return res
+     
 
 
 def path_deviation(track: TrackState) -> Optional[float]:
