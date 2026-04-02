@@ -37,7 +37,6 @@ type Incident = IncidentEvent & {
 type RouteInfo = {
   distance: string;
   duration: string;
-  avoided: number;
   rank: number;
 };
 
@@ -346,7 +345,6 @@ export default function App() {
           infos.push({
             distance: leg.distance.text,
             duration: leg.duration.text,
-            avoided: HIGH_RISK_INCIDENTS.length - touchedCount,
             rank: idx,
           });
         }
@@ -1196,18 +1194,6 @@ function RoutePanel({
                 >
                   <span>{info.distance}</span>
                   <span>{info.duration}</span>
-                  {avoidDanger && (
-                    <span
-                      style={{
-                        color:
-                          info.avoided > 0
-                            ? "#639922"
-                            : "rgba(232,228,220,0.4)",
-                      }}
-                    >
-                      {info.avoided} avoided
-                    </span>
-                  )}
                 </div>
               </div>
             );
