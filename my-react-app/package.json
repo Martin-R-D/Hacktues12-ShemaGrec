@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "db:import-rankings": "npx tsx scripts/import-rankings.ts",
     "setup-valhalla": "npx valhalla build_config --mjolnir-tile-dir valhalla_tiles --mjolnir-tile-extract valhalla_tiles.tar > config.json && npx valhalla build_tiles -c config.json bulgaria-260326.osm.pbf"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
     "@valhallajs/valhallajs": "^3.6.1",
     "express": "^5.2.1",
     "leaflet": "^1.9.4",
+    "pg": "^8.20.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-leaflet": "^5.0.0",
@@ -27,6 +29,7 @@
     "@types/babel__core": "^7.20.5",
     "@types/express": "^5.0.6",
     "@types/node": "^24.12.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
