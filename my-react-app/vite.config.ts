@@ -8,4 +8,15 @@ export default defineConfig({
     react(),
     babel({ presets: [reactCompilerPreset()] })
   ],
+  server: {
+    watch: {
+      ignored: ['**/venv/**'],
+    },
+  },
+  // Exclude venv from dependency scanning — it contains .html files
+  // from Python packages that break the build
+  optimizeDeps: {
+    exclude: [],
+    entries: ['index.html'],
+  },
 })

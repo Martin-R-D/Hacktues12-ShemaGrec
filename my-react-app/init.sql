@@ -25,3 +25,35 @@ SELECT create_hypertable('plate_events', 'time', if_not_exists => TRUE);
 
 -- Index for fast per-plate lookups
 CREATE INDEX IF NOT EXISTS idx_plate_events_plate ON plate_events (plate_number, time DESC);
+
+-- One row per ingested near-crash/real-crash event from detection service
+CREATE TABLE IF NOT EXISTS near_crash_events (
+    id           BIGSERIAL PRIMARY KEY,
+    event_id     TEXT UNIQUE NOT NULL,
+    camera_id    TEXT NOT NULL,
+    event_time   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    cord_x       DOUBLE PRECISION NOT NULL,
+    cord_y       DOUBLE PRECISION NOT NULL,
+    risk_weight  DOUBLE PRECISION NOT NULL,
+    source_type  TEXT NOT NULL DEFAULT 'near',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+SELECT create_hypertable('near_crash_events', 'event_time', if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS idx_near_crash_events_time ON near_crash_events (event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_near_crash_events_camera ON near_crash_events (camera_id, event_time DESC);
+
+-- Materialized hotspot ranking snapshot consumed by frontend and navigation services
+CREATE TABLE IF NOT EXISTS hotspot_rankings (
+    id           BIGSERIAL PRIMARY KEY,
+    rank         INTEGER NOT NULL,
+    cord_x       DOUBLE PRECISION NOT NULL,
+    cord_y       DOUBLE PRECISION NOT NULL,
+    score        DOUBLE PRECISION NOT NULL,
+    source_type  TEXT NOT NULL DEFAULT 'near',
+    computed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (cord_x, cord_y, source_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hotspot_rankings_rank ON hotspot_rankings (rank ASC);

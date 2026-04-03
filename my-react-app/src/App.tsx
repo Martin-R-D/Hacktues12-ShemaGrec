@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import rankingsData from "../detection/rankings.json";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   type ValhallaResponse,
@@ -24,7 +23,9 @@ import "leaflet/dist/leaflet.css";
 
 type Severity = "high" | "medium" | "low";
 
-type IncidentEvent = { lat: number; lng: number; weight: number };
+type IncidentType = "actual" | "near";
+
+type IncidentEvent = { lat: number; lng: number; weight: number; type: IncidentType };
 
 type Incident = IncidentEvent & {
   id: number;
@@ -50,17 +51,28 @@ type RoutePolyline = {
   rank: number;
 };
 
+type HotspotApiRow = {
+  rank: number;
+  cord_x: number;
+  cord_y: number;
+  score: number;
+  type?: string;
+};
+
+type HotspotApiResponse = {
+  computedAt: string | null;
+  hotspots: HotspotApiRow[];
+};
+
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
 const SOFIA_CENTER: [number, number] = [42.6977, 23.3219];
 
-const INCIDENTS: IncidentEvent[] = rankingsData.map((r) => ({
-  lat: r.cord_y,
-  lng: r.cord_x,
-  weight: r.score,
-}));
+const DETECTION_API_URL =
+  import.meta.env.VITE_DETECTION_API_URL ?? "http://localhost:8005";
+const HOTSPOT_POLL_MS = 60_000;
 
 const HOTSPOT_RADIUS_M = 350;
 
@@ -73,21 +85,21 @@ const SEVERITY_META: Record<Severity, { color: string; label: string }> = {
 const ROUTE_CONFIGS = [
   {
     color: "#4CAF50",
-    label: "Safest",
+    label: "Best",
     textColor: "#4CAF50",
     bg: "rgba(76,175,80,0.08)",
     border: "rgba(76,175,80,0.3)",
   },
   {
     color: "#EF9F27",
-    label: "2nd Safest",
+    label: "2nd Best",
     textColor: "#EF9F27",
     bg: "rgba(239,159,39,0.08)",
     border: "rgba(239,159,39,0.3)",
   },
   {
     color: "#1E88E5",
-    label: "3rd Safest",
+    label: "3rd Best",
     textColor: "#1E88E5",
     bg: "rgba(30,136,229,0.08)",
     border: "rgba(30,136,229,0.3)",
@@ -153,33 +165,6 @@ function makeDivIcon(color: string, label: string) {
     html: `<div style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;">${label}</div>`,
   });
 }
-
-/* ------------------------------------------------------------------ */
-/*  Derived data (static — computed once)                              */
-/* ------------------------------------------------------------------ */
-
-const ENRICHED_INCIDENTS: Incident[] = INCIDENTS.map((e, i) => ({
-  ...e,
-  id: i + 1,
-  severity: severityFromWeight(e.weight),
-  location: `Hotspot ${i + 1}`,
-  count: Math.max(1, Math.round(e.weight / 2)),
-  camera: `CAM-${String(i + 1).padStart(2, "0")}`,
-}));
-
-const SORTED_INCIDENTS = [...ENRICHED_INCIDENTS].sort(
-  (a, b) => b.weight - a.weight,
-);
-
-const HIGH_RISK_INCIDENTS = ENRICHED_INCIDENTS.filter(
-  (i) => i.severity === "high",
-);
-
-const SEVERITY_COUNTS: Record<Severity, number> = {
-  high: ENRICHED_INCIDENTS.filter((i) => i.severity === "high").length,
-  medium: ENRICHED_INCIDENTS.filter((i) => i.severity === "medium").length,
-  low: ENRICHED_INCIDENTS.filter((i) => i.severity === "low").length,
-};
 
 /* ------------------------------------------------------------------ */
 /*  Map interaction component                                          */
@@ -248,6 +233,79 @@ export default function App() {
   const [panTarget, setPanTarget] = useState<[number, number] | null>(null);
   const [panSeq, setPanSeq] = useState(0);
   const [selectedRouteRank, setSelectedRouteRank] = useState<number>(0);
+  const [incidents, setIncidents] = useState<IncidentEvent[]>([]);
+  const [hotspotsLastComputedAt, setHotspotsLastComputedAt] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadHotspots = async () => {
+      try {
+        const result = await fetch(`${DETECTION_API_URL}/api/hotspots?limit=200`);
+        if (!result.ok) {
+          throw new Error("Failed to load hotspots");
+        }
+        const payload = (await result.json()) as HotspotApiResponse;
+        if (cancelled) return;
+
+        const nextIncidents = payload.hotspots.map((r) => ({
+          lat: r.cord_y,
+          lng: r.cord_x,
+          weight: r.score,
+          type: r.type === "near" ? ("near" as const) : ("actual" as const),
+        }));
+
+        setIncidents(nextIncidents);
+        setHotspotsLastComputedAt(payload.computedAt);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    void loadHotspots();
+    const timer = window.setInterval(() => {
+      void loadHotspots();
+    }, HOTSPOT_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const enrichedIncidents = useMemo<Incident[]>(
+    () =>
+      incidents.map((e, i) => ({
+        ...e,
+        id: i + 1,
+        severity: severityFromWeight(e.weight),
+        location: `Hotspot ${i + 1}`,
+        count: Math.max(1, Math.round(e.weight / 2)),
+        camera: `CAM-${String(i + 1).padStart(2, "0")}`,
+      })),
+    [incidents],
+  );
+
+  const sortedIncidents = useMemo(
+    () => [...enrichedIncidents].sort((a, b) => b.weight - a.weight),
+    [enrichedIncidents],
+  );
+
+  const highRiskIncidents = useMemo(
+    () => enrichedIncidents.filter((i) => i.severity === "high"),
+    [enrichedIncidents],
+  );
+
+  const severityCounts = useMemo<Record<Severity, number>>(
+    () => ({
+      high: enrichedIncidents.filter((i) => i.severity === "high").length,
+      medium: enrichedIncidents.filter((i) => i.severity === "medium").length,
+      low: enrichedIncidents.filter((i) => i.severity === "low").length,
+    }),
+    [enrichedIncidents],
+  );
 
   const handleMapPick = useCallback(
     (latlng: { lat: number; lng: number }, mode: "origin" | "destination") => {
@@ -293,7 +351,7 @@ export default function App() {
           latB: dCoords.lat.toString(),
           exclusion: avoidDanger
             ? JSON.stringify(
-              ENRICHED_INCIDENTS.map((incident) => ({
+              enrichedIncidents.map((incident) => ({
                 lat: incident.lat,
                 lon: incident.lng,
               })),
@@ -333,15 +391,6 @@ export default function App() {
 
         const leg = route.legs[0];
         if (leg?.distance?.text && leg?.duration?.text) {
-          const routePoints = positions.map(([lat, lng]) => ({ lat, lng }));
-          const touchedCount = ENRICHED_INCIDENTS.filter((hs) =>
-            routePoints.some(
-              (p) =>
-                haversineMeters(p.lat, p.lng, hs.lat, hs.lng) <=
-                HOTSPOT_RADIUS_M,
-            ),
-          ).length;
-
           infos.push({
             distance: leg.distance.text,
             duration: leg.duration.text,
@@ -365,7 +414,7 @@ export default function App() {
     } finally {
       setRouteLoading(false);
     }
-  }, [avoidDanger, destination, origin, travelMode]);
+  }, [avoidDanger, destination, enrichedIncidents, highRiskIncidents.length, origin, travelMode]);
 
   const clearRoute = useCallback(() => {
     setRoutePolylines([]);
@@ -457,7 +506,7 @@ export default function App() {
           <p
             style={{ fontSize: 11, color: "rgba(232,228,220,0.45)", margin: 0 }}
           >
-            {`Sofia | ${INCIDENTS.length} incidents | last 30 days`}
+            {`Sofia | ${incidents.length} incidents | last 30 days${hotspotsLastComputedAt ? ` | updated ${new Date(hotspotsLastComputedAt).toLocaleTimeString()}` : ""}`}
           </p>
         </div>
 
@@ -486,7 +535,7 @@ export default function App() {
                   color: SEVERITY_META[sev].color,
                 }}
               >
-                {SEVERITY_COUNTS[sev]}
+                {severityCounts[sev]}
               </div>
               <div style={{ fontSize: 10, color: "rgba(232,228,220,0.4)" }}>
                 {SEVERITY_META[sev].label}
@@ -525,7 +574,7 @@ export default function App() {
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16 }}>
           {tab === "heatmap" ? (
             <HeatmapPanel
-              incidents={SORTED_INCIDENTS}
+              incidents={sortedIncidents}
               selectedId={selectedIncident?.id ?? null}
               showMarkers={showMarkers}
               onToggleMarkers={() => setShowMarkers((v) => !v)}
@@ -547,7 +596,7 @@ export default function App() {
               routeInfos={routeInfos}
               routeError={routeError}
               routeLoading={routeLoading}
-              highRiskCount={HIGH_RISK_INCIDENTS.length}
+              highRiskCount={highRiskIncidents.length}
               canCalc={canCalc}
               btnBg={btnBg}
               btnColor={btnColor}
@@ -594,24 +643,27 @@ export default function App() {
           <MapPanTo center={panTarget} seq={panSeq} />
 
           {/* Hotspot radius circles */}
-          {ENRICHED_INCIDENTS.map((inc) => (
-            <Circle
-              key={`circle-${inc.id}`}
-              center={[inc.lat, inc.lng]}
-              radius={HOTSPOT_RADIUS_M}
-              pathOptions={{
-                color: "#FFD600",
-                weight: 1,
-                opacity: 0.7,
-                fillColor: "#FFD600",
-                fillOpacity: 0.12,
-              }}
-            />
-          ))}
+          {enrichedIncidents.map((inc) => {
+            const circleColor = inc.type === "actual" ? "#E24B4A" : "#FFD600";
+            return (
+              <Circle
+                key={`circle-${inc.id}`}
+                center={[inc.lat, inc.lng]}
+                radius={HOTSPOT_RADIUS_M}
+                pathOptions={{
+                  color: circleColor,
+                  weight: 1,
+                  opacity: 0.7,
+                  fillColor: circleColor,
+                  fillOpacity: 0.12,
+                }}
+              />
+            );
+          })}
 
           {/* Incident markers */}
           {showMarkers &&
-            ENRICHED_INCIDENTS.map((inc) => (
+            enrichedIncidents.map((inc) => (
               <CircleMarker
                 key={`marker-${inc.id}`}
                 center={[inc.lat, inc.lng]}

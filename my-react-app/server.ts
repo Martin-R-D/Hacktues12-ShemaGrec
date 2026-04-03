@@ -39,7 +39,7 @@ app.listen(8004, () => {
   console.log("Server is running on port 8004");
 });
 
-app.use(function (req, res, next) {
+app.use(function (_req, res, next) {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
     "Access-Control-Allow-Headers",
@@ -124,6 +124,11 @@ async function calculateRoute(
       res.push(withExclude);
     }
   }
+  // if (res.length === 0) {
+  //   return { route: [await compute()], withExclusion: false };
+  // } else {
+  //   return { route: res, withExclusion: true };
+  //}
   if (res.length === 0) {
     return { route: [await compute()], withExclusion: false };
   } else {
