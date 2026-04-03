@@ -1,4 +1,5 @@
 import math
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,12 +27,14 @@ class NearCrashDetector:
         lat        : float = 0.0,
         lon        : float = 0.0,
         log_file   : Optional[str] = None,
+        dry_run    : bool  = False,
         save_output: bool  = False,
         show       : bool  = True,
     ):
         self.source      = source
         self.show        = show
         self.save_output = save_output
+        self.restream_proc: Optional[subprocess.Popen] = None
 
         print(f"[INFO] Loading {Config.MODEL_WEIGHTS}...")
         self.model = YOLO(Config.MODEL_WEIGHTS)
@@ -41,9 +44,9 @@ class NearCrashDetector:
         self.alert_cooldowns: Dict[Tuple[int, int], int] = {}
         self.display_events : List[Tuple[int, NearCrashEvent]] = []  # (frame_detected, event)
 
-        self.publisher = EventPublisher(log_file, camera_id, lat, lon)
+        self.publisher = EventPublisher(log_file, camera_id, lat, lon, dry_run=dry_run)
 
-        self.cap = cv2.VideoCapture(int(source) if source.isdigit() else source)
+        self.cap = self._open_capture(source, camera_id)
         if not self.cap.isOpened():
             raise ValueError(f"Cannot open source: {source}")
 
@@ -74,6 +77,62 @@ class NearCrashDetector:
                 Config.CALIBRATION_POINTS["world"],
             ))
             print("[INFO] Bird's-eye calibration active — distances in metres.")
+
+    def _open_capture(self, source: str, camera_id: str) -> cv2.VideoCapture:
+        cap = cv2.VideoCapture(int(source) if source.isdigit() else source)
+        if cap.isOpened():
+            return cap
+
+        if self._is_url_source(source):
+            print(f"[WARN] OpenCV could not open URL directly: {source}")
+            rtsp_url = f"rtsp://127.0.0.1:8554/{camera_id.strip().lower()}"
+            if self._start_restream(source, rtsp_url):
+                print(f"[INFO] Retrying via local RTSP restream: {rtsp_url}")
+                cap = cv2.VideoCapture(rtsp_url)
+
+        return cap
+
+    @staticmethod
+    def _is_url_source(source: str) -> bool:
+        src = source.lower()
+        return src.startswith("http://") or src.startswith("https://") or src.startswith("rtsp://")
+
+    def _start_restream(self, source_url: str, rtsp_url: str) -> bool:
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-fflags",
+            "nobuffer",
+            "-i",
+            source_url,
+            "-an",
+            "-c:v",
+            "copy",
+            "-f",
+            "rtsp",
+            "-rtsp_transport",
+            "tcp",
+            "-rtsp_flags",
+            "listen",
+            rtsp_url,
+        ]
+
+        try:
+            self.restream_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(1.5)
+            return self.restream_proc.poll() is None
+        except FileNotFoundError:
+            print("[ERROR] ffmpeg is not installed or not in PATH")
+            return False
+        except Exception as exc:
+            print(f"[ERROR] Failed to start ffmpeg restream: {exc}")
+            return False
 
     # ── Main loop ─────────────────────────────────────────────────────────
 
@@ -441,6 +500,12 @@ class NearCrashDetector:
 
     def _cleanup(self):
         self.cap.release()
+        if self.restream_proc and self.restream_proc.poll() is None:
+            self.restream_proc.terminate()
+            try:
+                self.restream_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.restream_proc.kill()
         if self.writer:
             self.writer.release()
         cv2.destroyAllWindows()

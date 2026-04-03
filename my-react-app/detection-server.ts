@@ -60,6 +60,22 @@ const hotspotQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
 });
 
+const eventsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(5000).optional(),
+});
+
+const rankingSnapshotItemSchema = z.object({
+  rank: z.number().int().positive(),
+  cord_x: z.number(),
+  cord_y: z.number(),
+  score: z.number().nonnegative(),
+  type: z.enum(["near", "actual"]).optional(),
+});
+
+const rankingSnapshotSchema = z.object({
+  hotspots: z.array(rankingSnapshotItemSchema),
+});
+
 app.use(express.json({ limit: "1mb" }));
 
 app.use((_, res, next) => {
@@ -119,6 +135,79 @@ app.get("/api/hotspots", async (req, res) => {
   } catch (err) {
     console.error("[detection] Failed to fetch hotspots:", err);
     res.status(500).json({ error: "Failed to fetch hotspots" });
+  }
+});
+
+app.get("/api/events", async (req, res) => {
+  const parsed = eventsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid query parameters" });
+    return;
+  }
+
+  const limit = parsed.data.limit ?? 2000;
+  try {
+    const { rows } = await pool.query<{
+      cord_x: number;
+      cord_y: number;
+      risk_weight: number;
+      event_count: number;
+    }>(
+      `SELECT
+         cord_x,
+         cord_y,
+         SUM(risk_weight) AS risk_weight,
+         COUNT(*)::int AS event_count
+       FROM near_crash_events
+       GROUP BY cord_x, cord_y
+       ORDER BY risk_weight DESC
+       LIMIT $1`,
+      [limit],
+    );
+
+    res.json({
+      events: rows,
+    });
+  } catch (err) {
+    console.error("[detection] Failed to fetch events:", err);
+    res.status(500).json({ error: "Failed to fetch events" });
+  }
+});
+
+app.post("/api/hotspots/snapshot", async (req, res) => {
+  const parsed = rankingSnapshotSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid snapshot payload" });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM hotspot_rankings");
+
+    for (const h of parsed.data.hotspots) {
+      await client.query(
+        `INSERT INTO hotspot_rankings (
+          rank,
+          cord_x,
+          cord_y,
+          score,
+          source_type,
+          computed_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [h.rank, h.cord_x, h.cord_y, h.score, h.type ?? "near"],
+      );
+    }
+
+    await client.query("COMMIT");
+    res.status(202).json({ accepted: true, count: parsed.data.hotspots.length });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[detection] Failed to replace ranking snapshot:", err);
+    res.status(500).json({ error: "Failed to replace ranking snapshot" });
+  } finally {
+    client.release();
   }
 });
 

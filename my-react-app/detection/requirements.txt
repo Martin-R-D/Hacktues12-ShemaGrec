@@ -4,3 +4,4 @@ numpy
 torch
 easyocr
 psycopg2-binary
+requests

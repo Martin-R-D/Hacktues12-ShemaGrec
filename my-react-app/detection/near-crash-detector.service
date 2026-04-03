@@ -1,0 +1,25 @@
+[Unit]
+Description=Near-Crash Detector Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/my-react-app/detection
+ExecStart=/usr/bin/python3 near_crash_detector.py \
+  --source 0 \
+  --location "CAM_LOCAL_01|42.6977,23.3219" \
+  --no-show \
+  --log-file /var/log/near-crash-detector.ndjson
+
+# Restart settings
+Restart=always
+RestartSec=10
+
+# Resource limits
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
