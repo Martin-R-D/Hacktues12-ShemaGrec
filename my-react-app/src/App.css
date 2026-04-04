@@ -1,3 +1,21 @@
+/* --- Tab Button Styles for Hotspots/Route --- */
+.tab-btn {
+  flex: 1;
+  padding: 11px 0;
+  border: none;
+  background: none;
+  color: rgba(232,228,220,0.35);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  transition: color 0.18s, border-bottom 0.18s;
+}
+.tab-btn-active {
+  color: #e8e4dc;
+  border-bottom: 2px solid #E24B4A;
+  background: none;
+}
 .counter {
   font-size: 16px;
   padding: 5px 10px;
@@ -349,4 +367,144 @@ select:focus {
 .incident-btn:hover {
   transform: translateX(4px);
   filter: brightness(1.2); /* Makes the background pop slightly on hover */
+}
+
+.app-root {
+  display: flex;
+  min-height: 100vh;
+  background: #0f1114;
+  color: #e8e4dc;
+}
+
+.sidebar {
+  width: 320px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #141618;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.sidebar-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sidebar-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #E24B4A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.sidebar-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sidebar-live {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(226,75,74,0.15);
+  color: #E24B4A;
+}
+
+.sidebar-subtitle {
+  font-size: 11px;
+  color: rgba(232,228,220,0.45);
+  margin: 0;
+}
+
+.severity-counts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: rgba(255,255,255,0.04);
+}
+
+.severity-cell {
+  padding: 12px 0;
+  text-align: center;
+  background: #141618;
+}
+
+.severity-count {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.severity-label {
+  font-size: 10px;
+  color: rgba(232,228,220,0.4);
+}
+
+.tab-row {
+  display: flex;
+  border-block: 1px solid rgba(255,255,255,0.06);
+}
+
+.tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.sidebar-footer {
+  padding: 10px 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 10px;
+  color: rgba(232,228,220,0.25);
+}
+
+.map-main {
+  flex: 1;
+  position: relative;
+  min-height: 100vh;
+}
+
+.map-container {
+  width: 100%;
+  height: 100%;
+}
+
+.toggle-btn {
+  width: 34px;
+  height: 20px;
+  border: none;
+  border-radius: 10px;
+  padding: 0;
+  background: rgba(255,255,255,0.1);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toggle-btn.toggle-on {
+  /* background color is set inline for dynamic color */
+}
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: #fff;
+  transition: left 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }

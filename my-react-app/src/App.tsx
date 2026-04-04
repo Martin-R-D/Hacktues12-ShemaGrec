@@ -16,6 +16,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "./App.css";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -437,133 +438,38 @@ export default function App() {
 
   /* ---- render ---- */
   return (
-    <div
-      style={{
-        display: "flex",
-        minHeight: "100vh",
-        background: "#0f1114",
-        color: "#e8e4dc",
-      }}
-    >
+    <div className="app-root">
       {/* ================ SIDEBAR ================ */}
-      <aside
-        style={{
-          width: 320,
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          background: "#141618",
-          borderRight: "1px solid rgba(255,255,255,0.06)",
-          flexShrink: 0,
-          overflow: "hidden",
-        }}
-      >
+      <aside className="sidebar">
         {/* -- header -- */}
-        <div
-          style={{
-            padding: "20px 20px 16px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 4,
-            }}
-          >
-            <div
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                background: "#E24B4A",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 13,
-                fontWeight: 700,
-                color: "#fff",
-              }}
-            >
-              S
-            </div>
-            <span style={{ fontSize: 16, fontWeight: 600 }}>SafeRoute</span>
-            <span
-              style={{
-                marginLeft: "auto",
-                fontSize: 10,
-                padding: "2px 7px",
-                borderRadius: 10,
-                background: "rgba(226,75,74,0.15)",
-                color: "#E24B4A",
-              }}
-            >
-              LIVE
-            </span>
+        <div className="sidebar-header">
+          <div className="sidebar-header-row">
+            <div className="sidebar-logo">S</div>
+            <span className="sidebar-title">SafeRoute</span>
+            <span className="sidebar-live">LIVE</span>
           </div>
-          <p
-            style={{ fontSize: 11, color: "rgba(232,228,220,0.45)", margin: 0 }}
-          >
+          <p className="sidebar-subtitle">
             {`Sofia | ${incidents.length} incidents | last 30 days${hotspotsLastComputedAt ? ` | updated ${new Date(hotspotsLastComputedAt).toLocaleTimeString()}` : ""}`}
           </p>
         </div>
 
         {/* -- severity counts -- */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 1,
-            background: "rgba(255,255,255,0.04)",
-          }}
-        >
+        <div className="severity-counts">
           {(["high", "medium", "low"] as const).map((sev) => (
-            <div
-              key={sev}
-              style={{
-                padding: "12px 0",
-                textAlign: "center",
-                background: "#141618",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 20,
-                  fontWeight: 700,
-                  color: SEVERITY_META[sev].color,
-                }}
-              >
-                {severityCounts[sev]}
-              </div>
-              <div style={{ fontSize: 10, color: "rgba(232,228,220,0.4)" }}>
-                {SEVERITY_META[sev].label}
-              </div>
+            <div key={sev} className="severity-cell">
+              <div className="severity-count" style={{ color: SEVERITY_META[sev].color }}>{severityCounts[sev]}</div>
+              <div className="severity-label">{SEVERITY_META[sev].label}</div>
             </div>
           ))}
         </div>
 
         {/* -- tabs -- */}
-        <div
-          style={{
-            display: "flex",
-            borderBlock: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
+        <div className="tab-row">
           {(["heatmap", "route"] as const).map((value) => (
             <button
               key={value}
               onClick={() => setTab(value)}
-              style={{
-                flex: 1,
-                padding: "11px 0",
-                border: "none",
-                background: "none",
-                color: tab === value ? "#e8e4dc" : "rgba(232,228,220,0.35)",
-                borderBottom: `2px solid ${tab === value ? "#E24B4A" : "transparent"}`,
-                cursor: "pointer",
-              }}
+              className={`tab-btn${tab === value ? " tab-btn-active" : ""}`}
             >
               {value === "heatmap" ? "Hotspots" : "Route"}
             </button>
@@ -571,7 +477,7 @@ export default function App() {
         </div>
 
         {/* -- tab content -- */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16 }}>
+        <div className="tab-content">
           {tab === "heatmap" ? (
             <HeatmapPanel
               incidents={sortedIncidents}
@@ -614,25 +520,18 @@ export default function App() {
         </div>
 
         {/* -- footer -- */}
-        <div
-          style={{
-            padding: "10px 16px",
-            borderTop: "1px solid rgba(255,255,255,0.06)",
-            fontSize: 10,
-            color: "rgba(232,228,220,0.25)",
-          }}
-        >
+        <div className="sidebar-footer">
           VenTech | SafeRoute | HackTUES 2026
         </div>
       </aside>
 
       {/* ================ MAP ================ */}
-      <main style={{ flex: 1, position: "relative", minHeight: "100vh" }}>
+      <main className="map-main">
         <MapContainer
           center={SOFIA_CENTER}
           zoom={14}
           zoomControl={true}
-          style={{ width: "100%", height: "100%" }}
+          className="map-container"
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -806,28 +705,10 @@ function Toggle({
     <button
       aria-label={label}
       onClick={onToggle}
-      style={{
-        width: 34,
-        height: 20,
-        border: "none",
-        borderRadius: 10,
-        padding: 0,
-        background: on ? color : "rgba(255,255,255,0.1)",
-        cursor: "pointer",
-        position: "relative",
-      }}
+      className={`toggle-btn${on ? " toggle-on" : ""}`}
+      style={{ background: on ? color : undefined }}
     >
-      <span
-        style={{
-          position: "absolute",
-          top: 2,
-          left: on ? 16 : 2,
-          width: 16,
-          height: 16,
-          borderRadius: 8,
-          background: "#fff",
-        }}
-      />
+      <span className="toggle-knob" style={{ left: on ? 16 : 2 }} />
     </button>
   );
 }
