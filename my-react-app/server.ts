@@ -253,7 +253,7 @@ async function calculateRoute(
       return routes.map((route) => ({ ...route, avoided: 0 }));
     }
 
-    return routes.map((route, index) => {
+    const withSafetyScore = routes.map((route, index) => {
       const included = countIncludedAvoidancePoints(route, data.exclusion!);
       console.log(`Included avoidance points (route ${index + 1}):`, included);
       return {
@@ -261,6 +261,9 @@ async function calculateRoute(
         avoided: Math.max(0, baselineIncludedCount - included),
       };
     });
+
+    // Highest avoided count means safest route.
+    return withSafetyScore.sort((a, b) => b.avoided - a.avoided);
   };
 
   if (res.length === 0) {

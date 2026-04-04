@@ -1140,7 +1140,7 @@ function RoutePanel({
                       fontWeight: 600,
                     }}
                   >
-                    avoided: {info.avoided}
+                    Dangerous zones avoided: {info.avoided}
                   </span>
                 </div>
               </div>
