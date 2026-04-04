@@ -73,6 +73,11 @@ async function calculateRoute(
 ) {
   // Create an actor with config generated on previous step
   const actor = await Actor.fromConfigFile("config.json");
+  type RouteResult = {
+    trip: {
+      legs: Array<{ shape: string }>;
+    };
+  };
 
   const compute = async (
     exclusionPoints?: { lat: number; lon: number }[],
@@ -90,7 +95,7 @@ async function calculateRoute(
         mode === "locations" && exclusionPoints ? exclusionPoints : undefined;
       console.debug("Exclusion polygons:", exclude_polygons);
       console.debug("Exclusion locations:", exclude_locations);
-      const result = await actor.route({
+      const result = (await actor.route({
         locations: [
           { lat: data.latA, lon: data.lngA },
           { lat: data.latB, lon: data.lngB },
@@ -98,7 +103,7 @@ async function calculateRoute(
         costing: data.travelMode === "drive" ? "auto" : "pedestrian",
         exclude_polygons,
         exclude_locations,
-      });
+      })) as RouteResult;
       return result;
     } catch (e) {
       if (e instanceof Error) {
@@ -107,12 +112,18 @@ async function calculateRoute(
     }
   };
 
+  const routeSignature = (route: RouteResult) => {
+    // Use encoded leg shapes as a stable geometry fingerprint.
+    return route.trip.legs.map((leg) => leg.shape).join("|");
+  };
+
   // Calculate a route with 3 iterations:
   // 1: exclude_locations only (point exclusion)
   // 2: exclude_polygons with small radius
   // 3: exclude_polygons with larger radius
   const radii = [30, 60];
-  const res = [];
+  const res: RouteResult[] = [];
+  const seenSignatures = new Set<string>();
   for (let i = 0; i < 3; i++) {
     let withExclude;
     if (i === 0) {
@@ -121,7 +132,11 @@ async function calculateRoute(
       withExclude = await compute(data.exclusion, "polygons", radii[i - 1]);
     }
     if (withExclude) {
-      res.push(withExclude);
+      const signature = routeSignature(withExclude);
+      if (!seenSignatures.has(signature)) {
+        seenSignatures.add(signature);
+        res.push(withExclude);
+      }
     }
   }
   // if (res.length === 0) {
@@ -130,8 +145,9 @@ async function calculateRoute(
   //   return { route: res, withExclusion: true };
   //}
   if (res.length === 0) {
-    return { route: [await compute()], withExclusion: false };
-  } else {
-    return { route: res.reverse(), withExclusion: true };
+    const fallback = await compute();
+    return { route: fallback ? [fallback] : [], withExclusion: false };
   }
+
+  return { route: res.reverse(), withExclusion: true };
 }
