@@ -19,6 +19,7 @@ const exclusionSchema = z.array(
 );
 
 const METERS_PER_DEGREE = 111320;
+const AVOIDANCE_MATCH_RADIUS_METERS = 20;
 
 function pointToCircle(lat: number, lon: number, radiusMeters: number) {
   const points = 8;
@@ -32,6 +33,75 @@ function pointToCircle(lat: number, lon: number, radiusMeters: number) {
     coords.push([lon + dLon, lat + dLat]);
   }
   return coords;
+}
+
+function decodePolyline6(encoded: string): Array<{ lat: number; lon: number }> {
+  const points: Array<{ lat: number; lon: number }> = [];
+  let index = 0;
+  let lat = 0;
+  let lon = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+
+    shift = 0;
+    result = 0;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    lon += result & 1 ? ~(result >> 1) : result >> 1;
+    points.push({ lat: lat / 1e6, lon: lon / 1e6 });
+  }
+
+  return points;
+}
+
+function toLocalMeters(lat: number, lon: number, latOrigin: number) {
+  const x = lon * METERS_PER_DEGREE * Math.cos((latOrigin * Math.PI) / 180);
+  const y = lat * METERS_PER_DEGREE;
+  return { x, y };
+}
+
+function pointToSegmentDistanceMeters(
+  point: { lat: number; lon: number },
+  start: { lat: number; lon: number },
+  end: { lat: number; lon: number },
+) {
+  const latOrigin = point.lat;
+  const p = toLocalMeters(point.lat, point.lon, latOrigin);
+  const a = toLocalMeters(start.lat, start.lon, latOrigin);
+  const b = toLocalMeters(end.lat, end.lon, latOrigin);
+
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+  const abLenSq = abx * abx + aby * aby;
+
+  if (abLenSq === 0) {
+    const dx = p.x - a.x;
+    const dy = p.y - a.y;
+    return Math.hypot(dx, dy);
+  }
+
+  const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+  const closestX = a.x + t * abx;
+  const closestY = a.y + t * aby;
+  return Math.hypot(p.x - closestX, p.y - closestY);
 }
 
 const app = express();
@@ -78,6 +148,7 @@ async function calculateRoute(
       legs: Array<{ shape: string }>;
     };
   };
+  type RouteWithAvoided = RouteResult & { avoided: number };
 
   const compute = async (
     exclusionPoints?: { lat: number; lon: number }[],
@@ -88,8 +159,8 @@ async function calculateRoute(
       const exclude_polygons =
         mode === "polygons" && exclusionPoints
           ? exclusionPoints.map((point) =>
-            pointToCircle(point.lat, point.lon, radius),
-          )
+              pointToCircle(point.lat, point.lon, radius),
+            )
           : undefined;
       const exclude_locations =
         mode === "locations" && exclusionPoints ? exclusionPoints : undefined;
@@ -117,6 +188,29 @@ async function calculateRoute(
     return route.trip.legs.map((leg) => leg.shape).join("|");
   };
 
+  const countIncludedAvoidancePoints = (
+    route: RouteResult,
+    avoidancePoints: { lat: number; lon: number }[],
+  ) => {
+    const routePoints = route.trip.legs.flatMap((leg) => decodePolyline6(leg.shape));
+    if (routePoints.length === 0 || avoidancePoints.length === 0) return 0;
+    if (routePoints.length === 1) {
+      return avoidancePoints.filter(
+        (point) =>
+          pointToSegmentDistanceMeters(point, routePoints[0], routePoints[0]) <=
+          AVOIDANCE_MATCH_RADIUS_METERS,
+      ).length;
+    }
+
+    return avoidancePoints.filter((point) => {
+      for (let i = 0; i < routePoints.length - 1; i++) {
+        const d = pointToSegmentDistanceMeters(point, routePoints[i], routePoints[i + 1]);
+        if (d <= AVOIDANCE_MATCH_RADIUS_METERS) return true;
+      }
+      return false;
+    }).length;
+  };
+
   // Calculate a route with 3 iterations:
   // 1: exclude_locations only (point exclusion)
   // 2: exclude_polygons with small radius
@@ -124,6 +218,20 @@ async function calculateRoute(
   const radii = [30, 60];
   const res: RouteResult[] = [];
   const seenSignatures = new Set<string>();
+  const hasAvoidancePoints = (data.exclusion?.length ?? 0) > 0;
+
+  let baselineIncludedCount = 0;
+  let baselineRoute: RouteResult | undefined;
+  if (hasAvoidancePoints) {
+    baselineRoute = await compute();
+    if (baselineRoute && data.exclusion) {
+      baselineIncludedCount = countIncludedAvoidancePoints(
+        baselineRoute,
+        data.exclusion,
+      );
+    }
+  }
+
   for (let i = 0; i < 3; i++) {
     let withExclude;
     if (i === 0) {
@@ -139,15 +247,29 @@ async function calculateRoute(
       }
     }
   }
-  // if (res.length === 0) {
-  //   return { route: [await compute()], withExclusion: false };
-  // } else {
-  //   return { route: res, withExclusion: true };
-  //}
+
+  const mapWithAvoided = (routes: RouteResult[]): RouteWithAvoided[] => {
+    if (!hasAvoidancePoints || !data.exclusion) {
+      return routes.map((route) => ({ ...route, avoided: 0 }));
+    }
+
+    return routes.map((route, index) => {
+      const included = countIncludedAvoidancePoints(route, data.exclusion!);
+      console.log(`Included avoidance points (route ${index + 1}):`, included);
+      return {
+        ...route,
+        avoided: Math.max(0, baselineIncludedCount - included),
+      };
+    });
+  };
+
   if (res.length === 0) {
-    const fallback = await compute();
-    return { route: fallback ? [fallback] : [], withExclusion: false };
+    const fallback = baselineRoute ?? (await compute());
+    return {
+      route: fallback ? mapWithAvoided([fallback]) : [],
+      withExclusion: false,
+    };
   }
 
-  return { route: res.reverse(), withExclusion: true };
+  return { route: mapWithAvoided(res), withExclusion: true };
 }

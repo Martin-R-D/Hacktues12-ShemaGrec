@@ -40,6 +40,7 @@ type RouteInfo = {
   distance: string;
   duration: string;
   rank: number;
+  avoided: number;
 };
 
 type TravelMode = "drive" | "pedestrian";
@@ -69,13 +70,13 @@ type HotspotApiResponse = {
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const SOFIA_CENTER: [number, number] = [42.6977, 23.3219];
+const BULGARIA_CENTER: [number, number] = [42.7339, 25.4858]; // Center of Bulgaria
 
 const DETECTION_API_URL =
   import.meta.env.VITE_DETECTION_API_URL ?? "http://localhost:8005";
 const HOTSPOT_POLL_MS = 60_000;
 
-const HOTSPOT_RADIUS_M = 350;
+const HOTSPOT_RADIUS_M = 20;
 
 const SEVERITY_META: Record<Severity, { color: string; label: string }> = {
   high: { color: "#E24B4A", label: "High" },
@@ -396,6 +397,7 @@ export default function App() {
             distance: leg.distance.text,
             duration: leg.duration.text,
             rank: idx,
+            avoided: parsedResult.route[idx]?.avoided ?? 0,
           });
         }
       });
@@ -528,8 +530,8 @@ export default function App() {
       {/* ================ MAP ================ */}
       <main className="map-main">
         <MapContainer
-          center={SOFIA_CENTER}
-          zoom={14}
+          center={BULGARIA_CENTER}
+          zoom={8}
           zoomControl={true}
           className="map-container"
         >
@@ -1123,10 +1125,23 @@ function RoutePanel({
                     gap: 14,
                     fontSize: 11,
                     color: "rgba(232,228,220,0.65)",
+                    flexWrap: "wrap",
                   }}
                 >
                   <span>{info.distance}</span>
                   <span>{info.duration}</span>
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: "rgba(99,153,34,0.16)",
+                      border: "1px solid rgba(99,153,34,0.45)",
+                      color: "#8BC34A",
+                      fontWeight: 600,
+                    }}
+                  >
+                    avoided: {info.avoided}
+                  </span>
                 </div>
               </div>
             );

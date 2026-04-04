@@ -29,6 +29,7 @@ type ValhallaTrip = {
 export type ValhallaResponse = {
   route: Array<{
     trip: ValhallaTrip;
+    avoided: number;
   }>;
   withExclusion: boolean;
 };
