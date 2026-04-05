@@ -34,6 +34,7 @@ type Incident = IncidentEvent & {
   location: string;
   count: number;
   camera: string;
+  imageUrl?: string;
 };
 
 type RouteInfo = {
@@ -262,7 +263,15 @@ export default function App() {
         setIncidents(nextIncidents);
         setHotspotsLastComputedAt(payload.computedAt);
       } catch (error) {
-        console.error(error);
+        console.warn("Detection API unreachable (", error, "). Loading fallback mock incidents for UI testing.");
+        if (cancelled) return;
+        setIncidents([
+          { lat: 42.6644, lng: 23.3740, weight: 9, type: "actual" as const },
+          { lat: 42.6680, lng: 23.3650, weight: 5, type: "near" as const },
+          { lat: 42.6700, lng: 23.3800, weight: 2, type: "near" as const },
+          { lat: 42.6600, lng: 23.3700, weight: 8, type: "actual" as const },
+        ]);
+        setHotspotsLastComputedAt(new Date().toISOString());
       }
     };
 
@@ -279,14 +288,20 @@ export default function App() {
 
   const enrichedIncidents = useMemo<Incident[]>(
     () =>
-      incidents.map((e, i) => ({
-        ...e,
-        id: i + 1,
-        severity: severityFromWeight(e.weight),
-        location: `Hotspot ${i + 1}`,
-        count: Math.max(1, Math.round(e.weight / 2)),
-        camera: `CAM-${String(i + 1).padStart(2, "0")}`,
-      })),
+      incidents.map((e, i) => {
+        const images = ["/snapshots/cam1.png", "/snapshots/cam2.png"];
+        const imageUrl = images[i % images.length];
+
+        return {
+          ...e,
+          id: i + 1,
+          severity: severityFromWeight(e.weight),
+          location: `Hotspot ${i + 1}`,
+          count: Math.max(1, Math.round(e.weight / 2)),
+          camera: `CAM-${String(i + 1).padStart(2, "0")}`,
+          imageUrl,
+        };
+      }),
     [incidents],
   );
 
@@ -652,8 +667,10 @@ export default function App() {
                 gap: 8,
               }}
             >
-              <strong style={{ fontSize: 12 }}>
-                {selectedIncident.location}
+              <strong style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 6, height: 6, backgroundColor: "#ff3b3b", borderRadius: "50%", animation: "blink 1.2s infinite" }} />
+                <style>{`@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }`}</style>
+                LIVE • {selectedIncident.location}
               </strong>
               <button
                 onClick={() => setSelectedIncident(null)}
@@ -667,9 +684,21 @@ export default function App() {
                 x
               </button>
             </div>
+            {selectedIncident.imageUrl && (
+              <div style={{ position: "relative", marginTop: 12, marginBottom: 12, borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <img
+                  src={selectedIncident.imageUrl}
+                  alt="Live Camera Feed"
+                  style={{ width: "100%", height: "auto", display: "block", aspectRatio: "16/9", objectFit: "cover" }}
+                />
+                <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", color: "#fff", padding: "4px 8px", fontSize: 10, borderRadius: 4, fontFamily: "monospace", letterSpacing: "1px" }}>
+                  {selectedIncident.camera} • REC
+                </div>
+              </div>
+            )}
             <div
               style={{
-                marginTop: 10,
+                marginTop: 0,
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
                 gap: 8,
@@ -678,7 +707,6 @@ export default function App() {
             >
               <span>{selectedIncident.count} incidents</span>
               <span>{SEVERITY_META[selectedIncident.severity].label}</span>
-              <span>{selectedIncident.camera}</span>
               <span>{`${selectedIncident.lat.toFixed(4)}, ${selectedIncident.lng.toFixed(4)}`}</span>
             </div>
           </div>
