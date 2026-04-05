@@ -54,6 +54,30 @@ type RoutePolyline = {
   rank: number;
 };
 
+type OpenMeteoCurrentWeather = {
+  temperature: number;
+  windspeed: number;
+  winddirection: number;
+  weathercode: number;
+  time: string;
+};
+
+type OpenMeteoResponse = {
+  latitude: number;
+  longitude: number;
+  current_weather?: OpenMeteoCurrentWeather;
+};
+
+type RouteWeatherPoint = {
+  lat: number;
+  lng: number;
+  checkpointLabel: string;
+  temperature: number | null;
+  winddirection: number | null;
+  weathercode: number | null;
+  time: string | null;
+};
+
 type HotspotApiRow = {
   rank: number;
   cord_x: number;
@@ -78,6 +102,28 @@ const DETECTION_API_URL =
 const HOTSPOT_POLL_MS = 60_000;
 
 const HOTSPOT_RADIUS_M = 20;
+const WEATHER_SAMPLE_DISTANCE_M = 5_000;
+const WEATHER_MAX_POINTS_PER_ROUTE = 6;
+
+const WEATHER_CODE_LABELS: Record<number, string> = {
+  0: "Clear sky",
+  1: "Mainly clear",
+  2: "Partly cloudy",
+  3: "Overcast",
+  45: "Fog",
+  48: "Depositing rime fog",
+  51: "Light drizzle",
+  53: "Moderate drizzle",
+  55: "Dense drizzle",
+  61: "Slight rain",
+  63: "Moderate rain",
+  65: "Heavy rain",
+  71: "Slight snow",
+  73: "Moderate snow",
+  75: "Heavy snow",
+  80: "Rain showers",
+  95: "Thunderstorm",
+};
 
 const SEVERITY_META: Record<Severity, { color: string; label: string }> = {
   high: { color: "#E24B4A", label: "High" },
@@ -169,6 +215,82 @@ function makeDivIcon(color: string, label: string) {
   });
 }
 
+function weatherCodeToEmoji(code: number | null): string {
+  if (code === null) return "?";
+  if (code === 0) return "☀️";
+  if (code === 1) return "🌤️";
+  if (code === 2) return "⛅";
+  if (code === 3) return "☁️";
+  if (code === 45 || code === 48) return "🌫️";
+  if (code === 51 || code === 53 || code === 55) return "🌦️";
+  if (code === 61 || code === 63 || code === 65 || code === 80) return "🌧️";
+  if (code === 71 || code === 73 || code === 75) return "❄️";
+  if (code === 95) return "⛈️";
+  return "🌡️";
+}
+
+function sampleRoutePointsForWeather(
+  positions: [number, number][],
+  minDistanceMeters = WEATHER_SAMPLE_DISTANCE_M,
+  maxPoints = WEATHER_MAX_POINTS_PER_ROUTE,
+): [number, number][] {
+  if (positions.length === 0) return [];
+
+  const sampled: [number, number][] = [positions[0]];
+  let last = positions[0];
+
+  for (let i = 1; i < positions.length; i += 1) {
+    const curr = positions[i];
+    const dist = haversineMeters(last[0], last[1], curr[0], curr[1]);
+    if (dist >= minDistanceMeters) {
+      sampled.push(curr);
+      last = curr;
+    }
+  }
+
+  const end = positions[positions.length - 1];
+  const sampledEnd = sampled[sampled.length - 1];
+  if (sampledEnd[0] !== end[0] || sampledEnd[1] !== end[1]) {
+    sampled.push(end);
+  }
+
+  if (sampled.length <= maxPoints) return sampled;
+
+  const reduced: [number, number][] = [];
+  const step = (sampled.length - 1) / (maxPoints - 1);
+  for (let i = 0; i < maxPoints; i += 1) {
+    reduced.push(sampled[Math.round(i * step)]);
+  }
+  return reduced;
+}
+
+async function fetchWeather(lat: number, lon: number): Promise<OpenMeteoResponse> {
+  const url = `https://api.open-meteo.com/v1/forecast
+    ?latitude=${lat}
+    &longitude=${lon}
+    &current_weather=true`
+    .replace(/\s+/g, "");
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Open-Meteo request failed: ${res.status}`);
+  }
+  return (await res.json()) as OpenMeteoResponse;
+}
+
+function makeWeatherPointIcon(point: RouteWeatherPoint): L.DivIcon {
+  const tempText = point.temperature === null ? "N/A" : `${point.temperature.toFixed(0)}C`;
+  const codeText = point.weathercode === null ? "-" : String(point.weathercode);
+  const emoji = weatherCodeToEmoji(point.weathercode);
+
+  return L.divIcon({
+    className: "",
+    iconSize: [76, 28],
+    iconAnchor: [38, 34], // Increased the y-offset to move the icon higher
+    html: `<div style="display:flex;align-items:center;gap:6px;padding:3px 7px;border-radius:999px;background:rgba(12,14,16,0.9);border:1px solid rgba(255,255,255,0.22);box-shadow:0 3px 10px rgba(0,0,0,0.25);color:#f8f7f4;font-size:11px;font-weight:700;line-height:1;white-space:nowrap;"><span style="font-size:13px;line-height:1;">${emoji}</span><span>${tempText}</span><span style="padding:1px 5px;border-radius:999px;border:1px solid rgba(142,198,255,0.6);background:rgba(30,136,229,0.2);color:#8EC6FF;">${codeText}</span></div>`,
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /*  Map interaction component                                          */
 /* ------------------------------------------------------------------ */
@@ -237,9 +359,13 @@ export default function App() {
   const [panSeq, setPanSeq] = useState(0);
   const [selectedRouteRank, setSelectedRouteRank] = useState<number>(0);
   const [incidents, setIncidents] = useState<IncidentEvent[]>([]);
+  const [routeWeatherByRank, setRouteWeatherByRank] = useState<
+    Record<number, RouteWeatherPoint[]>
+  >({});
   const [hotspotsLastComputedAt, setHotspotsLastComputedAt] = useState<
     string | null
   >(null);
+  const weatherRequestSeq = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -348,6 +474,7 @@ export default function App() {
     setRouteInfos([]);
     setRoutePolylines([]);
     setSelectedRouteRank(0);
+    setRouteWeatherByRank({});
 
     try {
       const oCoords = parseLatLngInput(origin);
@@ -420,11 +547,41 @@ export default function App() {
       setRoutePolylines(polylines);
       setRouteInfos(infos);
       setSelectedRouteRank(0);
-      if (!parsedResult.withExclusion) {
-        setRouteError(
-          "Could not find a route avoiding hotspots. Showing the safest possible route.",
-        );
-      }
+
+      const requestSeq = weatherRequestSeq.current + 1;
+      weatherRequestSeq.current = requestSeq;
+
+      void Promise.all(
+        polylines.map(async (route) => {
+          const sampledPoints = sampleRoutePointsForWeather(route.positions);
+          try {
+            const weatherPoints = await Promise.all(
+              sampledPoints.map(async ([lat, lng], pointIdx) => {
+                const payload = await fetchWeather(lat, lng);
+                const weather = payload.current_weather;
+                return {
+                  lat,
+                  lng,
+                  checkpointLabel: `Point ${pointIdx + 1}`,
+                  temperature: weather?.temperature ?? null,
+                  winddirection: weather?.winddirection ?? null,
+                  weathercode: weather?.weathercode ?? null,
+                  time: weather?.time ?? null,
+                } satisfies RouteWeatherPoint;
+              }),
+            );
+
+            if (weatherRequestSeq.current !== requestSeq) return;
+
+            setRouteWeatherByRank((prev) => ({
+              ...prev,
+              [route.rank]: weatherPoints,
+            }));
+          } catch (error) {
+            console.error("Failed to fetch weather for route", route.rank, error);
+          }
+        }),
+      );
     } catch (e) {
       console.error(e);
       setRoutePolylines([]);
@@ -435,9 +592,11 @@ export default function App() {
   }, [avoidDanger, destination, enrichedIncidents, highRiskIncidents.length, origin, travelMode]);
 
   const clearRoute = useCallback(() => {
+    weatherRequestSeq.current += 1;
     setRoutePolylines([]);
     setRouteInfos([]);
     setRouteError("");
+    setRouteWeatherByRank({});
     setMapPickMode(null);
     setOrigin("");
     setDestination("");
@@ -450,6 +609,7 @@ export default function App() {
 
   const originCoords = parseLatLngInput(origin);
   const destCoords = parseLatLngInput(destination);
+  const selectedRouteWeather = routeWeatherByRank[selectedRouteRank] ?? [];
 
   // Consume panTarget after one render
 
@@ -626,6 +786,15 @@ export default function App() {
                 />
               );
             })}
+
+          {/* Weather markers for selected route */}
+          {selectedRouteWeather.map((point, idx) => (
+            <Marker
+              key={`weather-${selectedRouteRank}-${idx}-${point.lat}-${point.lng}`}
+              position={[point.lat, point.lng]}
+              icon={makeWeatherPointIcon(point)}
+            />
+          ))}
 
           {/* Origin marker */}
           {originCoords && (
