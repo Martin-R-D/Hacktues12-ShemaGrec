@@ -11,32 +11,33 @@ type AuthTokenPayload = {
   sub: string;
 };
 
-type UserRecord = {
-  username: string;
-  passwordHash: string;
-};
-
-const users = new Map<string, UserRecord>();
+const DB_HOST = process.env.DB_HOST ?? "db";
+const DB_PORT = Number(process.env.DB_PORT ?? "5432");
+const DB_NAME = process.env.DB_NAME ?? "plates";
+const DB_USER = process.env.DB_USER ?? "admin";
+const DB_PASS = process.env.DB_PASS ?? "admin";
 
 // Initialize Sequelize with PostgreSQL
-const sequelize = new Sequelize('postgres://admin:admin@plates_db:5432/plates', {
+const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASS, {
+  host: DB_HOST,
+  port: DB_PORT,
   dialect: 'postgres',
-  logging: false, // Disable logging for cleaner output
+  logging: false,
 });
 
 // Define the User model
 class User extends Model {
-  public id!: number;
-  public username!: string;
-  public passwordHash!: string;
-  public readonly createdAt!: Date;
-  public readonly updatedAt!: Date;
+  declare id: number;
+  declare username: string;
+  declare passwordHash: string;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
 }
 
 User.init(
   {
     id: {
-      type: DataTypes.INTEGER, // Removed UNSIGNED as it's not supported in PostgreSQL
+      type: DataTypes.INTEGER, 
       autoIncrement: true,
       primaryKey: true,
     },
@@ -65,8 +66,6 @@ User.init(
 sequelize.sync({ alter: true })
   .then(() => console.log("Database synced and User model ready."))
   .catch((err) => console.error("Failed to sync database:", err));
-
-// Replace the in-memory users map with Sequelize operations
 
 const signUpSchema = z.object({
   username: z.string().trim().min(3).max(40),
@@ -213,8 +212,16 @@ app.post("/auth/signUp", async (req, res) => {
     const passwordHash = createHash("sha256").update(password).digest("hex");
 
     const newUser = await User.create({ username, passwordHash });
-    res.status(201).json({ message: "User created successfully", userId: newUser.id });
-  } catch (error) {
+    const token = jwt.sign({ sub: String(newUser.id) }, JWT_SECRET, {
+      expiresIn: "1h",
+    });
+    res.status(201).json({ token, username: newUser.username });
+  } catch (error: any) {
+    // Handle duplicate username error
+    if (error.name === "SequelizeUniqueConstraintError" || (error.parent && error.parent.code === '23505')) {
+      res.status(409).json({ error: "Username already exists" });
+      return;
+    }
     res.status(400).json({ error: (error as Error).message });
   }
 });
@@ -229,14 +236,14 @@ app.post("/auth/signIn", async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: "1h" });
-    res.json({ token });
+    const token = jwt.sign({ sub: String(user.id) }, JWT_SECRET, { expiresIn: "1h" });
+    res.json({ token, username: user.username });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }
 });
 
-app.get("/auth/me", (req, res) => {
+app.get("/auth/me", async (req, res) => {
   const token = getBearerToken(req.header("Authorization"));
   if (!token) {
     res.status(401).json({ error: "Missing token" });
@@ -245,12 +252,19 @@ app.get("/auth/me", (req, res) => {
 
   try {
     const payload = jwt.verify(token, JWT_SECRET) as AuthTokenPayload;
-    const username = payload.sub;
-    if (!username || !users.has(username)) {
+    const userId = Number(payload.sub);
+    if (!Number.isInteger(userId)) {
       res.status(401).json({ error: "Invalid token" });
       return;
     }
-    res.json({ username });
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      res.status(401).json({ error: "Invalid token" });
+      return;
+    }
+
+    res.json({ username: user.username });
   } catch {
     res.status(401).json({ error: "Invalid token" });
   }
