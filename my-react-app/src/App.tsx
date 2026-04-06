@@ -44,7 +44,11 @@ type RouteInfo = {
   duration: string;
   rank: number;
   avoided: number;
+  turns: number;
+  difficulty: RouteDifficulty;
 };
+
+type RouteDifficulty = "easy" | "moderate" | "hard";
 
 type TravelMode = "drive" | "pedestrian";
 
@@ -149,6 +153,19 @@ const ROUTE_CONFIGS = [
     border: "rgba(30,136,229,0.3)",
   },
 ];
+
+const TURN_WEIGHTS: Record<number, number> = {
+  7: 0.5, // slight right
+  8: 1,   // right
+  9: 1.5, // sharp right
+  10: 2,  // u-turn right
+  11: 2,  // u-turn left
+  12: 1.5, // sharp left
+  13: 1,   // left
+  14: 0.5, // slight left
+};
+
+
 
 const INPUT_STYLE: CSSProperties = {
   width: "100%",
@@ -293,6 +310,21 @@ function makeWeatherPointIcon(point: RouteWeatherPoint): L.DivIcon {
     iconAnchor: [38, 34], // Increased the y-offset to move the icon higher
     html: `<div style="display:flex;align-items:center;gap:6px;padding:3px 7px;border-radius:999px;background:rgba(12,14,16,0.9);border:1px solid rgba(255,255,255,0.22);box-shadow:0 3px 10px rgba(0,0,0,0.25);color:#f8f7f4;font-size:11px;font-weight:700;line-height:1;white-space:nowrap;"><span style="font-size:13px;line-height:1;">${emoji}</span><span>${tempText}</span><span style="padding:1px 5px;border-radius:999px;border:1px solid rgba(142,198,255,0.6);background:rgba(30,136,229,0.2);color:#8EC6FF;">${codeText}</span></div>`,
   });
+}
+
+function countRouteTurnsFromManeuvers(legs: { maneuvers: Array<{ type: number }> }[]): number {
+  return legs.reduce((total, leg) => {
+    const weightedTurnsInLeg = leg.maneuvers.reduce((count, maneuver) => {
+      return count + (TURN_WEIGHTS[maneuver.type] || 0);
+    }, 0);
+    return total + weightedTurnsInLeg;
+  }, 0);
+}
+
+function difficultyFromTurns(turns: number): RouteDifficulty {
+  if (turns <= 4) return "easy";
+  if (turns <= 9) return "moderate";
+  return "hard";
 }
 
 /* ------------------------------------------------------------------ */
@@ -634,12 +666,16 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
         });
 
         const leg = route.legs[0];
+        const routeEntry = parsedResult.route[idx];
+        const turns = routeEntry ? countRouteTurnsFromManeuvers(routeEntry.trip.legs) : 0;
         if (leg?.distance?.text && leg?.duration?.text) {
           infos.push({
             distance: leg.distance.text,
             duration: leg.duration.text,
             rank: idx,
             avoided: parsedResult.route[idx]?.avoided ?? 0,
+            turns,
+            difficulty: difficultyFromTurns(turns),
           });
         }
       });
@@ -1592,13 +1628,29 @@ function RoutePanel({
                     style={{
                       padding: "2px 8px",
                       borderRadius: 999,
-                      background: "rgba(99,153,34,0.16)",
-                      border: "1px solid rgba(99,153,34,0.45)",
-                      color: "#8BC34A",
+                      background:
+                        info.difficulty === "easy"
+                          ? "rgba(99,153,34,0.16)"
+                          : info.difficulty === "moderate"
+                          ? "rgba(239,159,39,0.16)"
+                          : "rgba(226,75,74,0.16)",
+                      border:
+                        info.difficulty === "easy"
+                          ? "1px solid rgba(99,153,34,0.45)"
+                          : info.difficulty === "moderate"
+                          ? "1px solid rgba(239,159,39,0.45)"
+                          : "1px solid rgba(226,75,74,0.45)",
+                      color:
+                        info.difficulty === "easy"
+                          ? "#8BC34A"
+                          : info.difficulty === "moderate"
+                          ? "#EF9F27"
+                          : "#E24B4A",
                       fontWeight: 600,
+                      textTransform: "capitalize",
                     }}
                   >
-                    Dangerous zones avoided: {info.avoided}
+                    Route difficulty (based on turns): {info.difficulty}
                   </span>
                 </div>
               </div>
