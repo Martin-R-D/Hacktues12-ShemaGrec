@@ -43,7 +43,7 @@ class EventPublisher:
             "lat": self.lat,
             "lng": self.lon,
             "riskWeight": evt.risk_weight,
-            "sourceType": "near" if evt.is_near_crash else "actual",
+            "sourceType": "near"
         }
 
         success = False

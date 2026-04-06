@@ -49,10 +49,10 @@ async function ensureSchema() {
 const eventSchema = z.object({
   eventId: z.string().min(1),
   cameraId: z.string().min(1),
-  eventTime: z.string().datetime().optional(),
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
-  riskWeight: z.number().positive(),
+  eventTime: z.string().datetime({ offset: true, local: true }).optional(),
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+  riskWeight: z.coerce.number().positive(),
   sourceType: z.enum(["near", "actual"]).default("near"),
 });
 
@@ -214,7 +214,10 @@ app.post("/api/hotspots/snapshot", async (req, res) => {
 app.post("/api/events", async (req, res) => {
   const parsed = eventSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid event payload" });
+    res.status(400).json({
+      error: "Invalid event payload",
+      details: parsed.error.flatten(),
+    });
     return;
   }
 

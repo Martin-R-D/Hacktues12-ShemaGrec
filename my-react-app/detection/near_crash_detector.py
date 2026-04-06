@@ -58,7 +58,8 @@ def parse_args():
     p = argparse.ArgumentParser(description="Near-Crash Detector v2.1")
     # Sample URLs:  
     # https://s31.ipcamlive.com/streams/1f9owgjb5d471pdyu/stream.m3u8
-    # https://manifest.googlevideo.com/api/manifest/hls_playlist/expire/1775254465/ei/YefPabC-Fdy9hcIPyYjLwQY/ip/213.130.77.61/id/U4L-omkVIBQ.1/itag/95/source/yt_live_broadcast/requiressl/yes/ratebypass/yes/live/1/sgoap/gir%3Dyes%3Bitag%3D140/sgovp/gir%3Dyes%3Bitag%3D136/rqh/1/hls_chunk_host/rr2---sn-8p85jvh-nv4d.googlevideo.com/xpc/EgVo2aDSNQ%3D%3D/bui/AUUZDGIWBkP8RqxXN7yNRuaLRHKFbKOurmMgYnicGDCixd1Ua-2FICYHDXB2-2Q3llj4m6Ph8zT2N5BN/spc/jlWavVTJ_lCEYuIbpHF4BPhploAqCa0kmxye7uSq8N4x2c383Q/vprv/1/reg/0/playlist_type/DVR/initcwndbps/2937500/met/1775232865,/mh/sJ/mm/44/mn/sn-8p85jvh-nv4d/ms/lva/mv/m/mvi/2/pl/24/rms/lva,lva/dover/11/pacing/0/keepalive/yes/fexp/51565115,51565682/mt/1775232521/sparams/expire,ei,ip,id,itag,source,requiressl,ratebypass,live,sgoap,sgovp,rqh,xpc,bui,spc,vprv,reg,playlist_type/sig/AHEqNM4wRgIhALpcKa9tec2c2SCZ4naTqQd4vg8XFLkE13taxz87c1kWAiEAyli3oT7ppqlXHNta0hddtUDcHGjZtdZ5vsWbFIBBerY%3D/lsparams/hls_chunk_host,initcwndbps,met,mh,mm,mn,ms,mv,mvi,pl,rms/lsig/APaTxxMwRQIgewYRqFZy0gSGpe-LHHOE-GwdbJ2akrlc9xlHkWYV34QCIQDlwoBZGpLVah0SZF8_5AECL3gaRR96mU8k0kEv10awPA%3D%3D/playlist/index.m3u8
+    # get example URL from YouTube live stream thru:
+    # yt-dlp -g "YOUTUBE_LIVESTREAM_URL"
     p.add_argument("--source",    action="append", required=True,
                    help="Video file, image dir, stream URL (rtsp://...), or '0' for webcam. Specify multiple times for multiple sources.")
     p.add_argument("--location",  action="append", default=[],
