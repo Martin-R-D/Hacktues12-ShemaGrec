@@ -1628,6 +1628,18 @@ function RoutePanel({
                     style={{
                       padding: "2px 8px",
                       borderRadius: 999,
+                      background: "rgba(99,153,34,0.16)",
+                      border: "1px solid rgba(99,153,34,0.45)",
+                      color: "#8BC34A",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Dangerous zones avoided: {info.avoided}
+                  </span>
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 999,
                       background:
                         info.difficulty === "easy"
                           ? "rgba(99,153,34,0.16)"
