@@ -65,3 +65,15 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Saved user locations for route shortcuts
+CREATE TABLE IF NOT EXISTS "usersPoint" (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    lan DOUBLE PRECISION NOT NULL,
+    lon DOUBLE PRECISION NOT NULL,
+    "userId" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_point_user_id ON "usersPoint" ("userId", created_at DESC);

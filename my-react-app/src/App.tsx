@@ -93,6 +93,15 @@ type HotspotApiResponse = {
   hotspots: HotspotApiRow[];
 };
 
+type UserPlace = {
+  id: number;
+  name: string;
+  lan: number;
+  lon: number;
+};
+
+type MapPickMode = "origin" | "destination" | "myPlace" | null;
+
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
@@ -101,6 +110,7 @@ const BULGARIA_CENTER: [number, number] = [42.7339, 25.4858]; // Center of Bulga
 
 const DETECTION_API_URL =
   import.meta.env.VITE_DETECTION_API_URL ?? "http://localhost:8005";
+const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL ?? "http://localhost:8004";
 const AUTH_TOKEN_KEY = "saferoute_auth_token";
 const AUTH_USERNAME_KEY = "saferoute_auth_username";
 const HOTSPOT_POLL_MS = 60_000;
@@ -200,6 +210,15 @@ function makeDivIcon(color: string, label: string) {
   });
 }
 
+function makePlaceIcon(name: string) {
+  return L.divIcon({
+    className: "",
+    iconSize: [140, 30],
+    iconAnchor: [12, 30],
+    html: `<div style="display:flex;align-items:center;gap:8px;"><div style="width:12px;height:12px;border-radius:50%;background:#8EC6FF;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.35)"></div><div style="padding:3px 8px;border-radius:999px;background:rgba(12,14,16,0.9);border:1px solid rgba(142,198,255,0.6);color:#d7ecff;font-size:11px;font-weight:700;max-width:108px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div></div>`,
+  });
+}
+
 function weatherCodeToEmoji(code: number | null): string {
   if (code === null) return "?";
   if (code === 0) return "☀️";
@@ -284,10 +303,10 @@ function MapClickHandler({
   pickMode,
   onPick,
 }: {
-  pickMode: "origin" | "destination" | null;
+  pickMode: MapPickMode;
   onPick: (
     latlng: { lat: number; lng: number },
-    mode: "origin" | "destination",
+    mode: Exclude<MapPickMode, null>,
   ) => void;
 }) {
   useMapEvents({
@@ -322,7 +341,7 @@ function MapPanTo({
 /*  App                                                                */
 /* ------------------------------------------------------------------ */
 
-function SafetyMapApp() {
+function SafetyMapApp({ authToken }: { authToken: string }) {
   /* ---- state ---- */
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(
     null,
@@ -335,10 +354,8 @@ function SafetyMapApp() {
   const [routeError, setRouteError] = useState("");
   const [routeLoading, setRouteLoading] = useState(false);
   const [showMarkers, setShowMarkers] = useState(true);
-  const [mapPickMode, setMapPickMode] = useState<
-    "origin" | "destination" | null
-  >(null);
-  const [tab, setTab] = useState<"heatmap" | "route">("heatmap");
+  const [mapPickMode, setMapPickMode] = useState<MapPickMode>(null);
+  const [tab, setTab] = useState<"heatmap" | "route" | "myPlaces">("heatmap");
   const [routePolylines, setRoutePolylines] = useState<RoutePolyline[]>([]);
   const [panTarget, setPanTarget] = useState<[number, number] | null>(null);
   const [panSeq, setPanSeq] = useState(0);
@@ -350,7 +367,34 @@ function SafetyMapApp() {
   const [hotspotsLastComputedAt, setHotspotsLastComputedAt] = useState<
     string | null
   >(null);
+  const [userPlaces, setUserPlaces] = useState<UserPlace[]>([]);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const [placesError, setPlacesError] = useState("");
+  const [placeNameInput, setPlaceNameInput] = useState("");
+  const [placePick, setPlacePick] = useState<{ lat: number; lng: number } | null>(null);
+  const [savingPlace, setSavingPlace] = useState(false);
   const weatherRequestSeq = useRef(0);
+
+  const loadUserPlaces = useCallback(async () => {
+    setPlacesLoading(true);
+    setPlacesError("");
+    try {
+      const response = await fetch(`${AUTH_API_URL}/user-points`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error("Failed to load your places");
+      }
+      const points = (await response.json()) as UserPlace[];
+      setUserPlaces(points);
+    } catch (error) {
+      setPlacesError(error instanceof Error ? error.message : "Failed to load your places");
+    } finally {
+      setPlacesLoading(false);
+    }
+  }, [authToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -397,6 +441,10 @@ function SafetyMapApp() {
     };
   }, []);
 
+  useEffect(() => {
+    void loadUserPlaces();
+  }, [loadUserPlaces]);
+
   const enrichedIncidents = useMemo<Incident[]>(
     () =>
       incidents.map((e, i) => {
@@ -436,18 +484,85 @@ function SafetyMapApp() {
   );
 
   const handleMapPick = useCallback(
-    (latlng: { lat: number; lng: number }, mode: "origin" | "destination") => {
+    (latlng: { lat: number; lng: number }, mode: Exclude<MapPickMode, null>) => {
       const picked = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
       if (mode === "origin") {
         setOrigin(picked);
         setMapPickMode("destination");
-      } else {
+        setTab("route");
+        return;
+      }
+
+      if (mode === "destination") {
         setDestination(picked);
         setMapPickMode(null);
+        setTab("route");
+        return;
       }
-      setTab("route");
+
+      setPlacePick({ lat: latlng.lat, lng: latlng.lng });
+      setMapPickMode(null);
+      setTab("myPlaces");
     },
     [],
+  );
+
+  const savePlace = useCallback(async () => {
+    const trimmedName = placeNameInput.trim();
+    if (!trimmedName || !placePick) return;
+
+    setSavingPlace(true);
+    setPlacesError("");
+    try {
+      const response = await fetch(`${AUTH_API_URL}/user-points`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          name: trimmedName,
+          lan: placePick.lat,
+          lon: placePick.lng,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(errorPayload?.error ?? "Failed to save place");
+      }
+
+      const created = (await response.json()) as UserPlace;
+      setUserPlaces((prev) => [created, ...prev]);
+      setPlaceNameInput("");
+      setPlacePick(null);
+    } catch (error) {
+      setPlacesError(error instanceof Error ? error.message : "Failed to save place");
+    } finally {
+      setSavingPlace(false);
+    }
+  }, [authToken, placeNameInput, placePick]);
+
+  const selectPlaceAsOrigin = useCallback(
+    (placeId: string) => {
+      if (!placeId) return;
+      const place = userPlaces.find((p) => p.id === Number(placeId));
+      if (!place) return;
+      setOrigin(`${place.lan.toFixed(6)}, ${place.lon.toFixed(6)}`);
+    },
+    [userPlaces],
+  );
+
+  const selectPlaceAsDestination = useCallback(
+    (placeId: string) => {
+      if (!placeId) return;
+      const place = userPlaces.find((p) => p.id === Number(placeId));
+      if (!place) return;
+      setDestination(`${place.lan.toFixed(6)}, ${place.lon.toFixed(6)}`);
+    },
+    [userPlaces],
   );
 
   /* ---- route calculation ---- */
@@ -627,13 +742,17 @@ function SafetyMapApp() {
 
         {/* -- tabs -- */}
         <div className="tab-row">
-          {(["heatmap", "route"] as const).map((value) => (
+          {(["heatmap", "route", "myPlaces"] as const).map((value) => (
             <button
               key={value}
               onClick={() => setTab(value)}
               className={`tab-btn${tab === value ? " tab-btn-active" : ""}`}
             >
-              {value === "heatmap" ? "Hotspots" : "Route"}
+              {value === "heatmap"
+                ? "Hotspots"
+                : value === "route"
+                  ? "Route"
+                  : "My places"}
             </button>
           ))}
         </div>
@@ -654,10 +773,11 @@ function SafetyMapApp() {
                 setPanSeq((s) => s + 1);
               }}
             />
-          ) : (
+          ) : tab === "route" ? (
             <RoutePanel
               origin={origin}
               destination={destination}
+              userPlaces={userPlaces}
               travelMode={travelMode}
               avoidDanger={avoidDanger}
               mapPickMode={mapPickMode}
@@ -672,11 +792,26 @@ function SafetyMapApp() {
               onSelectRoute={setSelectedRouteRank}
               onOriginChange={setOrigin}
               onDestinationChange={setDestination}
+              onOriginFromPlace={selectPlaceAsOrigin}
+              onDestinationFromPlace={selectPlaceAsDestination}
               onTravelModeChange={setTravelMode}
               onToggleAvoidDanger={() => setAvoidDanger((v) => !v)}
               onPickMode={setMapPickMode}
               onCalcRoute={() => void calcRoute()}
               onClearRoute={clearRoute}
+            />
+          ) : (
+            <MyPlacesPanel
+              places={userPlaces}
+              loading={placesLoading}
+              error={placesError}
+              placeNameInput={placeNameInput}
+              placePick={placePick}
+              mapPickMode={mapPickMode}
+              savingPlace={savingPlace}
+              onPlaceNameChange={setPlaceNameInput}
+              onStartPick={() => setMapPickMode(mapPickMode === "myPlace" ? null : "myPlace")}
+              onSavePlace={() => void savePlace()}
             />
           )}
         </div>
@@ -740,6 +875,14 @@ function SafetyMapApp() {
                 }}
               />
             ))}
+
+          {userPlaces.map((place) => (
+            <Marker
+              key={`user-place-${place.id}`}
+              position={[place.lan, place.lon]}
+              icon={makePlaceIcon(place.name)}
+            />
+          ))}
 
 
           {/* Route polylines */}
@@ -938,7 +1081,7 @@ export default function App() {
       >
         {authUsername ? `Log out (${authUsername})` : "Log out"}
       </button>
-      <SafetyMapApp />
+      <SafetyMapApp authToken={authToken} />
     </div>
   );
 }
@@ -1078,6 +1221,7 @@ function HeatmapPanel({
 function RoutePanel({
   origin,
   destination,
+  userPlaces,
   travelMode,
   avoidDanger,
   mapPickMode,
@@ -1092,6 +1236,8 @@ function RoutePanel({
   onSelectRoute,
   onOriginChange,
   onDestinationChange,
+  onOriginFromPlace,
+  onDestinationFromPlace,
   onTravelModeChange,
   onToggleAvoidDanger,
   onPickMode,
@@ -1100,9 +1246,10 @@ function RoutePanel({
 }: {
   origin: string;
   destination: string;
+  userPlaces: UserPlace[];
   travelMode: TravelMode;
   avoidDanger: boolean;
-  mapPickMode: "origin" | "destination" | null;
+  mapPickMode: MapPickMode;
   routeInfos: RouteInfo[];
   routeError: string;
   routeLoading: boolean;
@@ -1114,19 +1261,48 @@ function RoutePanel({
   onSelectRoute: (rank: number) => void;
   onOriginChange: (v: string) => void;
   onDestinationChange: (v: string) => void;
+  onOriginFromPlace: (id: string) => void;
+  onDestinationFromPlace: (id: string) => void;
   onTravelModeChange: (v: TravelMode) => void;
   onToggleAvoidDanger: () => void;
-  onPickMode: (mode: "origin" | "destination" | null) => void;
+  onPickMode: (mode: MapPickMode) => void;
   onCalcRoute: () => void;
   onClearRoute: () => void;
 }) {
   return (
     <>
       <label
-        htmlFor="origin"
+        htmlFor="origin-place"
         style={{
           display: "block",
           marginBottom: 6,
+          fontSize: 11,
+          color: "rgba(232,228,220,0.45)",
+        }}
+      >
+        FROM MY PLACES
+      </label>
+      <select
+        id="origin-place"
+        defaultValue=""
+        onChange={(e) => onOriginFromPlace(e.target.value)}
+        style={INPUT_STYLE}
+      >
+        <option value="" style={{ color: "#111" }}>
+          Select saved point
+        </option>
+        {userPlaces.map((place) => (
+          <option key={`origin-${place.id}`} value={place.id} style={{ color: "#111" }}>
+            {place.name}
+          </option>
+        ))}
+      </select>
+
+      <label
+        htmlFor="origin"
+        style={{
+          display: "block",
+          margin: "12px 0 6px",
           fontSize: 11,
           color: "rgba(232,228,220,0.45)",
         }}
@@ -1140,6 +1316,33 @@ function RoutePanel({
         placeholder="e.g. Studentski grad, Sofia"
         style={INPUT_STYLE}
       />
+
+      <label
+        htmlFor="destination-place"
+        style={{
+          display: "block",
+          margin: "12px 0 6px",
+          fontSize: 11,
+          color: "rgba(232,228,220,0.45)",
+        }}
+      >
+        TO MY PLACES
+      </label>
+      <select
+        id="destination-place"
+        defaultValue=""
+        onChange={(e) => onDestinationFromPlace(e.target.value)}
+        style={INPUT_STYLE}
+      >
+        <option value="" style={{ color: "#111" }}>
+          Select saved point
+        </option>
+        {userPlaces.map((place) => (
+          <option key={`destination-${place.id}`} value={place.id} style={{ color: "#111" }}>
+            {place.name}
+          </option>
+        ))}
+      </select>
 
       <label
         htmlFor="destination"
@@ -1435,6 +1638,152 @@ function RoutePanel({
         >
           Clear routes
         </button>
+      )}
+    </>
+  );
+}
+
+function MyPlacesPanel({
+  places,
+  loading,
+  error,
+  placeNameInput,
+  placePick,
+  mapPickMode,
+  savingPlace,
+  onPlaceNameChange,
+  onStartPick,
+  onSavePlace,
+}: {
+  places: UserPlace[];
+  loading: boolean;
+  error: string;
+  placeNameInput: string;
+  placePick: { lat: number; lng: number } | null;
+  mapPickMode: MapPickMode;
+  savingPlace: boolean;
+  onPlaceNameChange: (value: string) => void;
+  onStartPick: () => void;
+  onSavePlace: () => void;
+}) {
+  const canSave = placeNameInput.trim().length > 0 && placePick !== null && !savingPlace;
+
+  return (
+    <>
+      <button
+        onClick={onStartPick}
+        style={{
+          width: "100%",
+          padding: "10px 0",
+          borderRadius: 8,
+          border: `1px solid ${mapPickMode === "myPlace" ? "rgba(142,198,255,0.7)" : "rgba(255,255,255,0.1)"}`,
+          background: mapPickMode === "myPlace" ? "rgba(142,198,255,0.16)" : "rgba(255,255,255,0.04)",
+          color: "#e8e4dc",
+          cursor: "pointer",
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        {mapPickMode === "myPlace" ? "Click map to choose place" : "Pick place on map"}
+      </button>
+
+      {placePick && (
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 11,
+            color: "rgba(232,228,220,0.7)",
+          }}
+        >
+          {`Selected point: ${placePick.lat.toFixed(6)}, ${placePick.lng.toFixed(6)}`}
+        </div>
+      )}
+
+      <label
+        htmlFor="place-name"
+        style={{
+          display: "block",
+          margin: "12px 0 6px",
+          fontSize: 11,
+          color: "rgba(232,228,220,0.45)",
+        }}
+      >
+        PLACE NAME
+      </label>
+      <input
+        id="place-name"
+        value={placeNameInput}
+        onChange={(e) => onPlaceNameChange(e.target.value)}
+        placeholder="e.g. Home"
+        style={INPUT_STYLE}
+      />
+
+      <button
+        onClick={onSavePlace}
+        disabled={!canSave}
+        style={{
+          width: "100%",
+          marginTop: 10,
+          padding: "10px 0",
+          borderRadius: 8,
+          border: "none",
+          background: canSave ? "#1E88E5" : "rgba(255,255,255,0.08)",
+          color: canSave ? "#fff" : "rgba(232,228,220,0.35)",
+          cursor: canSave ? "pointer" : "default",
+          fontWeight: 700,
+        }}
+      >
+        {savingPlace ? "Saving..." : "Save place"}
+      </button>
+
+      {error && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            borderRadius: 8,
+            background: "rgba(226,75,74,0.1)",
+            color: "#E24B4A",
+            fontSize: 12,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div
+        style={{
+          marginTop: 14,
+          marginBottom: 8,
+          fontSize: 11,
+          color: "rgba(232,228,220,0.45)",
+        }}
+      >
+        SAVED PLACES
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: 12, color: "rgba(232,228,220,0.7)" }}>Loading places...</div>
+      ) : places.length === 0 ? (
+        <div style={{ fontSize: 12, color: "rgba(232,228,220,0.5)" }}>No saved places yet.</div>
+      ) : (
+        places.map((place) => (
+          <div
+            key={place.id}
+            style={{
+              padding: "9px 10px",
+              marginBottom: 6,
+              borderRadius: 8,
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#d7ecff" }}>{place.name}</div>
+            <div style={{ fontSize: 10, color: "rgba(232,228,220,0.6)", marginTop: 2 }}>
+              {`${place.lan.toFixed(6)}, ${place.lon.toFixed(6)}`}
+            </div>
+          </div>
+        ))
       )}
     </>
   );

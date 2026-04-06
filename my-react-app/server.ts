@@ -34,6 +34,16 @@ class User extends Model {
   declare readonly updatedAt: Date;
 }
 
+class UserPoint extends Model {
+  declare id: number;
+  declare name: string;
+  declare lan: number;
+  declare lon: number;
+  declare userId: number;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
+}
+
 User.init(
   {
     id: {
@@ -62,9 +72,44 @@ User.init(
   },
 );
 
+UserPoint.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    lan: {
+      type: DataTypes.DOUBLE,
+      allowNull: false,
+    },
+    lon: {
+      type: DataTypes.DOUBLE,
+      allowNull: false,
+    },
+    userId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: "users",
+        key: "id",
+      },
+    },
+  },
+  {
+    sequelize,
+    modelName: "UserPoint",
+    tableName: "usersPoint",
+  },
+);
+
 // Sync the database
 sequelize.sync({ alter: true })
-  .then(() => console.log("Database synced and User model ready."))
+  .then(() => console.log("Database synced and auth/place models ready."))
   .catch((err) => console.error("Failed to sync database:", err));
 
 const signUpSchema = z.object({
@@ -75,6 +120,12 @@ const signUpSchema = z.object({
 const signInSchema = z.object({
   username: z.string().trim().min(1),
   password: z.string().min(1),
+});
+
+const userPointSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  lan: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
 });
 
 const routeSchema = z.object({
@@ -192,6 +243,18 @@ function getBearerToken(value: string | undefined) {
   return value.slice(7);
 }
 
+function getAuthenticatedUserId(req: express.Request): number | null {
+  const token = getBearerToken(req.header("Authorization"));
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as AuthTokenPayload;
+    const userId = Number(payload.sub);
+    return Number.isInteger(userId) ? userId : null;
+  } catch {
+    return null;
+  }
+}
+
 app.use(function (req, res, next) {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
@@ -267,6 +330,46 @@ app.get("/auth/me", async (req, res) => {
     res.json({ username: user.username });
   } catch {
     res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+app.get("/user-points", async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Missing or invalid token" });
+    return;
+  }
+
+  try {
+    const points = await UserPoint.findAll({
+      where: { userId },
+      order: [["createdAt", "DESC"]],
+      attributes: ["id", "name", "lan", "lon"],
+    });
+    res.json(points);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/user-points", async (req, res) => {
+  const userId = getAuthenticatedUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Missing or invalid token" });
+    return;
+  }
+
+  try {
+    const payload = userPointSchema.parse(req.body);
+    const created = await UserPoint.create({ ...payload, userId });
+    res.status(201).json({
+      id: created.id,
+      name: created.name,
+      lan: created.lan,
+      lon: created.lon,
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
