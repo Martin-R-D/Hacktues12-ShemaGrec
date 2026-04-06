@@ -224,11 +224,8 @@ app.post("/api/events", async (req, res) => {
   const event = parsed.data;
   const eventTime = event.eventTime ? new Date(event.eventTime) : new Date();
 
-  const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-
-    const insertResult = await client.query<{ id: number }>(
+    const insertResult = await pool.query<{ id: number }>(
       `INSERT INTO near_crash_events (
         event_id,
         camera_id,
@@ -253,52 +250,13 @@ app.post("/api/events", async (req, res) => {
 
     const inserted = (insertResult.rowCount ?? 0) > 0;
 
-    if (inserted) {
-      await client.query(
-        `INSERT INTO hotspot_rankings (
-          rank,
-          cord_x,
-          cord_y,
-          score,
-          source_type,
-          computed_at
-        ) VALUES (
-          0,
-          $1,
-          $2,
-          $3,
-          $4,
-          NOW()
-        )
-        ON CONFLICT (cord_x, cord_y, source_type)
-        DO UPDATE SET
-          score = hotspot_rankings.score + EXCLUDED.score,
-          computed_at = NOW()`,
-        [event.lng, event.lat, event.riskWeight, event.sourceType],
-      );
-
-      await client.query(
-        `WITH ranked AS (
-           SELECT
-             id,
-             ROW_NUMBER() OVER (ORDER BY score DESC) AS new_rank
-           FROM hotspot_rankings
-         )
-         UPDATE hotspot_rankings h
-         SET rank = r.new_rank
-         FROM ranked r
-         WHERE h.id = r.id`,
-      );
-    }
-
-    await client.query("COMMIT");
+    // Ranking tables are intentionally not updated during ingestion.
+    // Frontend-visible hotspots are updated only via /api/hotspots/snapshot
+    // after get_rankings.py finishes statistical processing.
     res.status(202).json({ accepted: true, deduplicated: !inserted });
   } catch (err) {
-    await client.query("ROLLBACK");
     console.error("[detection] Failed to ingest event:", err);
     res.status(500).json({ error: "Failed to ingest event" });
-  } finally {
-    client.release();
   }
 });
 
