@@ -15,11 +15,14 @@
     "@types/leaflet": "^1.9.21",
     "@valhallajs/valhallajs": "^3.6.1",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",
     "pg": "^8.20.0",
+    "pg-hstore": "^2.3.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-leaflet": "^5.0.0",
+    "sequelize": "^6.37.8",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -28,6 +31,7 @@
     "@rolldown/plugin-babel": "^0.2.1",
     "@types/babel__core": "^7.20.5",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.12.0",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",

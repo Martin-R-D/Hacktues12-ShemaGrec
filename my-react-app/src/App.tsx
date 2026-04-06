@@ -17,6 +17,8 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
+import SignInPage from "./SignInPage";
+import SignUpPage from "./SignUpPage";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -99,31 +101,14 @@ const BULGARIA_CENTER: [number, number] = [42.7339, 25.4858]; // Center of Bulga
 
 const DETECTION_API_URL =
   import.meta.env.VITE_DETECTION_API_URL ?? "http://localhost:8005";
+const AUTH_TOKEN_KEY = "saferoute_auth_token";
+const AUTH_USERNAME_KEY = "saferoute_auth_username";
 const HOTSPOT_POLL_MS = 60_000;
 
 const HOTSPOT_RADIUS_M = 20;
 const WEATHER_SAMPLE_DISTANCE_M = 5_000;
 const WEATHER_MAX_POINTS_PER_ROUTE = 6;
 
-const WEATHER_CODE_LABELS: Record<number, string> = {
-  0: "Clear sky",
-  1: "Mainly clear",
-  2: "Partly cloudy",
-  3: "Overcast",
-  45: "Fog",
-  48: "Depositing rime fog",
-  51: "Light drizzle",
-  53: "Moderate drizzle",
-  55: "Dense drizzle",
-  61: "Slight rain",
-  63: "Moderate rain",
-  65: "Heavy rain",
-  71: "Slight snow",
-  73: "Moderate snow",
-  75: "Heavy snow",
-  80: "Rain showers",
-  95: "Thunderstorm",
-};
 
 const SEVERITY_META: Record<Severity, { color: string; label: string }> = {
   high: { color: "#E24B4A", label: "High" },
@@ -337,7 +322,7 @@ function MapPanTo({
 /*  App                                                                */
 /* ------------------------------------------------------------------ */
 
-export default function App() {
+function SafetyMapApp() {
   /* ---- state ---- */
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(
     null,
@@ -881,6 +866,79 @@ export default function App() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+type AuthMode = "signIn" | "signUp";
+
+export default function App() {
+  const [authMode, setAuthMode] = useState<AuthMode>("signIn");
+  const [authToken, setAuthToken] = useState<string | null>(() =>
+    window.localStorage.getItem(AUTH_TOKEN_KEY),
+  );
+  const [authUsername, setAuthUsername] = useState<string | null>(() =>
+    window.localStorage.getItem(AUTH_USERNAME_KEY),
+  );
+
+  const handleLogout = useCallback(() => {
+    setAuthToken(null);
+    setAuthUsername(null);
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    window.localStorage.removeItem(AUTH_USERNAME_KEY);
+    setAuthMode("signIn");
+  }, []);
+
+  if (!authToken) {
+    if (authMode === "signUp") {
+      return (
+        <SignUpPage
+          onAuthenticated={(username) => {
+            setAuthToken(window.localStorage.getItem(AUTH_TOKEN_KEY));
+            setAuthUsername(username);
+          }}
+          onSwitchToSignIn={() => {
+            setAuthMode("signIn");
+          }}
+        />
+      );
+    }
+
+    return (
+      <SignInPage
+        onAuthenticated={(username) => {
+          setAuthToken(window.localStorage.getItem(AUTH_TOKEN_KEY));
+          setAuthUsername(username);
+        }}
+        onSwitchToSignUp={() => {
+          setAuthMode("signUp");
+        }}
+      />
+    );
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={handleLogout}
+        style={{
+          position: "absolute",
+          top: 12,
+          right: 12,
+          zIndex: 2000,
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.2)",
+          background: "rgba(20,22,24,0.8)",
+          color: "rgba(232,228,220,0.9)",
+          cursor: "pointer",
+          fontSize: 11,
+          fontWeight: 700,
+        }}
+      >
+        {authUsername ? `Log out (${authUsername})` : "Log out"}
+      </button>
+      <SafetyMapApp />
     </div>
   );
 }

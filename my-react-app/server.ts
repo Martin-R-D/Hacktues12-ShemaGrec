@@ -1,6 +1,82 @@
 import express from "express";
 import { Actor } from "@valhallajs/valhallajs";
+import jwt from "jsonwebtoken";
+import { createHash } from "node:crypto";
 import * as z from "zod";
+import { Sequelize, DataTypes, Model } from "sequelize";
+
+const JWT_SECRET = process.env.JWT_SECRET ?? "dev-only-safe-route-secret";
+
+type AuthTokenPayload = {
+  sub: string;
+};
+
+type UserRecord = {
+  username: string;
+  passwordHash: string;
+};
+
+const users = new Map<string, UserRecord>();
+
+// Initialize Sequelize with PostgreSQL
+const sequelize = new Sequelize('postgres://admin:admin@plates_db:5432/plates', {
+  dialect: 'postgres',
+  logging: false, // Disable logging for cleaner output
+});
+
+// Define the User model
+class User extends Model {
+  public id!: number;
+  public username!: string;
+  public passwordHash!: string;
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
+}
+
+User.init(
+  {
+    id: {
+      type: DataTypes.INTEGER, // Removed UNSIGNED as it's not supported in PostgreSQL
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    username: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+    },
+    passwordHash: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    createdAt: {
+      type: DataTypes.DATE,
+      defaultValue: Sequelize.literal('NOW()'),
+    },
+  },
+  {
+    sequelize,
+    modelName: "User",
+    tableName: "users",
+  },
+);
+
+// Sync the database
+sequelize.sync({ alter: true })
+  .then(() => console.log("Database synced and User model ready."))
+  .catch((err) => console.error("Failed to sync database:", err));
+
+// Replace the in-memory users map with Sequelize operations
+
+const signUpSchema = z.object({
+  username: z.string().trim().min(3).max(40),
+  password: z.string().min(4).max(200),
+});
+
+const signInSchema = z.object({
+  username: z.string().trim().min(1),
+  password: z.string().min(1),
+});
 
 const routeSchema = z.object({
   lngA: z.coerce.number(),
@@ -109,13 +185,75 @@ app.listen(8004, () => {
   console.log("Server is running on port 8004");
 });
 
-app.use(function (_req, res, next) {
+app.use(express.json());
+
+
+function getBearerToken(value: string | undefined) {
+  if (!value || !value.startsWith("Bearer ")) return null;
+  return value.slice(7);
+}
+
+app.use(function (req, res, next) {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization",
   );
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
   next();
+});
+
+app.post("/auth/signUp", async (req, res) => {
+  try {
+    const { username, password } = signUpSchema.parse(req.body);
+    const passwordHash = createHash("sha256").update(password).digest("hex");
+
+    const newUser = await User.create({ username, passwordHash });
+    res.status(201).json({ message: "User created successfully", userId: newUser.id });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/auth/signIn", async (req, res) => {
+  try {
+    const { username, password } = signInSchema.parse(req.body);
+    const passwordHash = createHash("sha256").update(password).digest("hex");
+
+    const user = await User.findOne({ where: { username } });
+    if (!user || user.passwordHash !== passwordHash) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: "1h" });
+    res.json({ token });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.get("/auth/me", (req, res) => {
+  const token = getBearerToken(req.header("Authorization"));
+  if (!token) {
+    res.status(401).json({ error: "Missing token" });
+    return;
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as AuthTokenPayload;
+    const username = payload.sub;
+    if (!username || !users.has(username)) {
+      res.status(401).json({ error: "Invalid token" });
+      return;
+    }
+    res.json({ username });
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
 });
 
 app.get("/get_route", async (req, res) => {
