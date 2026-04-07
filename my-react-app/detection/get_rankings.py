@@ -71,17 +71,25 @@ def _load_detected_from_api(api_url: str, limit: int = 2000) -> List[dict]:
             "cord_x": float(row.get("cord_x", 0.0)),
             "cord_y": float(row.get("cord_y", 0.0)),
             "risk_weight": float(row.get("risk_weight", 0.0)),
+            "image_base64": row.get("image_base64"),
         }
         for row in rows
     ]
 
 
-def _merge(hotspots: List[dict], lat: float, lon: float, score: float) -> None:
+def _merge(hotspots: List[dict], lat: float, lon: float, score: float, image_base64: Optional[str] = None) -> None:
     for h in hotspots:
         if _haversine_m(lat, lon, h["cord_y"], h["cord_x"]) <= MERGE_RADIUS_M:
             h["score"] += score
+            if image_base64 and not h.get("imageBase64"):
+                h["imageBase64"] = image_base64
             return
-    hotspots.append({"cord_x": round(lon, 7), "cord_y": round(lat, 7), "score": score})
+    hotspots.append({
+        "cord_x": round(lon, 7), 
+        "cord_y": round(lat, 7), 
+        "score": score,
+        "imageBase64": image_base64
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -118,11 +126,11 @@ def get_rankings(
 
     for h in real_crashes:
         score = h.get("risk_weight", 0) * REAL_CRASH_WEIGHT
-        _merge(hotspots, h["cord_y"], h["cord_x"], score)
+        _merge(hotspots, h["cord_y"], h["cord_x"], score, h.get("image_base64"))
 
     for h in detected:
         score = h.get("risk_weight", 0) * DETECTED_WEIGHT * confidence
-        _merge(hotspots, h["cord_y"], h["cord_x"], score)
+        _merge(hotspots, h["cord_y"], h["cord_x"], score, h.get("image_base64"))
 
     hotspots.sort(key=lambda h: h["score"], reverse=True)
 
@@ -132,6 +140,7 @@ def get_rankings(
             "cord_x": h["cord_x"],
             "cord_y": h["cord_y"],
             "score" : round(h["score"], 3),
+            "imageBase64": h.get("imageBase64")
         }
         for i, h in enumerate(hotspots)
     ]

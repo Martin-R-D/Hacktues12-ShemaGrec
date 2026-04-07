@@ -35,7 +35,6 @@ class EventPublisher:
             print(f"    [DRY RUN] Event logged only, no API upload")
             return
 
-        # Post to API immediately
         payload = {
             "eventId": str(uuid.uuid4()),  # Unique dedup key
             "cameraId": self.camera_id,
@@ -45,6 +44,9 @@ class EventPublisher:
             "riskWeight": evt.risk_weight,
             "sourceType": "near"
         }
+
+        if evt.image_base64:
+            payload["imageBase64"] = evt.image_base64
 
         success = False
         for attempt in range(1, self.max_retries + 1):

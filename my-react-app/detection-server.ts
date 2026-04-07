@@ -24,6 +24,7 @@ async function ensureSchema() {
       cord_y       DOUBLE PRECISION NOT NULL,
       risk_weight  DOUBLE PRECISION NOT NULL,
       source_type  TEXT NOT NULL DEFAULT 'near',
+      image_base64 TEXT,
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
@@ -36,6 +37,7 @@ async function ensureSchema() {
       cord_y       DOUBLE PRECISION NOT NULL,
       score        DOUBLE PRECISION NOT NULL,
       source_type  TEXT NOT NULL DEFAULT 'near',
+      image_base64 TEXT,
       computed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (cord_x, cord_y, source_type)
     )
@@ -54,6 +56,7 @@ const eventSchema = z.object({
   lng: z.coerce.number().min(-180).max(180),
   riskWeight: z.coerce.number().positive(),
   sourceType: z.enum(["near", "actual"]).default("near"),
+  imageBase64: z.string().optional(),
 });
 
 const hotspotQuerySchema = z.object({
@@ -70,6 +73,7 @@ const rankingSnapshotItemSchema = z.object({
   cord_y: z.number(),
   score: z.number().nonnegative(),
   type: z.enum(["near", "actual"]).optional(),
+  imageBase64: z.string().optional(),
 });
 
 const rankingSnapshotSchema = z.object({
@@ -113,6 +117,7 @@ app.get("/api/hotspots", async (req, res) => {
       cord_y: number;
       score: number;
       type: "near" | "actual";
+      image_base64: string | null;
       computed_at: string;
     }>(
       `SELECT
@@ -121,6 +126,7 @@ app.get("/api/hotspots", async (req, res) => {
          cord_y,
          score,
          source_type AS type,
+         image_base64,
          computed_at
        FROM hotspot_rankings
        ORDER BY rank ASC
@@ -152,15 +158,33 @@ app.get("/api/events", async (req, res) => {
       cord_y: number;
       risk_weight: number;
       event_count: number;
+      image_base64: string | null;
     }>(
-      `SELECT
-         cord_x,
-         cord_y,
-         SUM(risk_weight) AS risk_weight,
-         COUNT(*)::int AS event_count
-       FROM near_crash_events
-       GROUP BY cord_x, cord_y
-       ORDER BY risk_weight DESC
+      `WITH grouped AS (
+         SELECT
+           cord_x,
+           cord_y,
+           SUM(risk_weight) AS risk_weight,
+           COUNT(*)::int AS event_count
+         FROM near_crash_events
+         GROUP BY cord_x, cord_y
+       ),
+       latest_images AS (
+         SELECT DISTINCT ON (cord_x, cord_y)
+           cord_x, cord_y, image_base64
+         FROM near_crash_events
+         WHERE image_base64 IS NOT NULL
+         ORDER BY cord_x, cord_y, event_time DESC
+       )
+       SELECT
+         g.cord_x,
+         g.cord_y,
+         g.risk_weight,
+         g.event_count,
+         i.image_base64
+       FROM grouped g
+       LEFT JOIN latest_images i ON g.cord_x = i.cord_x AND g.cord_y = i.cord_y
+       ORDER BY g.risk_weight DESC
        LIMIT $1`,
       [limit],
     );
@@ -194,9 +218,10 @@ app.post("/api/hotspots/snapshot", async (req, res) => {
           cord_y,
           score,
           source_type,
+          image_base64,
           computed_at
-        ) VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [h.rank, h.cord_x, h.cord_y, h.score, h.type ?? "near"],
+        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [h.rank, h.cord_x, h.cord_y, h.score, h.type ?? "near", h.imageBase64 ?? null],
       );
     }
 
@@ -233,8 +258,9 @@ app.post("/api/events", async (req, res) => {
         cord_x,
         cord_y,
         risk_weight,
-        source_type
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        source_type,
+        image_base64
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (event_id) DO NOTHING
       RETURNING id`,
       [
@@ -245,6 +271,7 @@ app.post("/api/events", async (req, res) => {
         event.lat,
         event.riskWeight,
         event.sourceType,
+        event.imageBase64 ?? null,
       ],
     );
 

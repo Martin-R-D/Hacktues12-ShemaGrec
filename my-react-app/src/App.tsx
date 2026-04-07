@@ -28,7 +28,7 @@ type Severity = "high" | "medium" | "low";
 
 type IncidentType = "actual" | "near";
 
-type IncidentEvent = { lat: number; lng: number; weight: number; type: IncidentType };
+type IncidentEvent = { lat: number; lng: number; weight: number; type: IncidentType; dbImageBase64?: string };
 
 type Incident = IncidentEvent & {
   id: number;
@@ -90,6 +90,7 @@ type HotspotApiRow = {
   cord_y: number;
   score: number;
   type?: string;
+  image_base64?: string;
 };
 
 type HotspotApiResponse = {
@@ -445,6 +446,7 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
           lng: r.cord_x,
           weight: r.score,
           type: r.type === "near" ? ("near" as const) : ("actual" as const),
+          dbImageBase64: r.image_base64,
         }));
 
         setIncidents(nextIncidents);
@@ -481,7 +483,7 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
     () =>
       incidents.map((e, i) => {
         const images = ["/snapshots/cam1.png", "/snapshots/cam2.png"];
-        const imageUrl = images[i % images.length];
+        const imageUrl = e.dbImageBase64 ? `data:image/jpeg;base64,${e.dbImageBase64}` : images[i % images.length];
 
         return {
           ...e,

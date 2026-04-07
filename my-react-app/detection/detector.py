@@ -43,6 +43,7 @@ class NearCrashDetector:
         self.events         : List[NearCrashEvent]      = []
         self.alert_cooldowns: Dict[Tuple[int, int], int] = {}
         self.display_events : List[Tuple[int, NearCrashEvent]] = []  # (frame_detected, event)
+        self.last_image_publish_time = 0.0
 
         self.publisher = EventPublisher(log_file, camera_id, lat, lon, dry_run=dry_run)
 
@@ -233,7 +234,6 @@ class NearCrashDetector:
                     frame_events.append(evt)
                     self.events.append(evt)
                     self.alert_cooldowns[pair_key] = self.frame_idx
-                    self.publisher.publish(evt)
 
         # ── Rule 4  (path deviation, per vehicle) ─────────────────────
         if Config.ENABLE_PATH_DEVIATION:
@@ -248,7 +248,6 @@ class NearCrashDetector:
                     frame_events.append(evt)
                     self.events.append(evt)
                     self.alert_cooldowns[pair_key] = self.frame_idx
-                    self.publisher.publish(evt)
 
         # ── Rule 5  (non-vehicle -> car proximity) ────────────────────
         if Config.ENABLE_NONVEH_PROXIMITY:
@@ -267,7 +266,6 @@ class NearCrashDetector:
                         frame_events.append(evt)
                         self.events.append(evt)
                         self.alert_cooldowns[pair_key] = self.frame_idx
-                        self.publisher.publish(evt)
 
         # Register new events for sustained display
         for evt in frame_events:
@@ -279,7 +277,18 @@ class NearCrashDetector:
             if self.frame_idx - f < Config.ALERT_DISPLAY_FRAMES
         ]
 
-        return self._annotate(frame, active_ids, [e for _, e in self.display_events])
+        annotated = self._annotate(frame, active_ids, [e for _, e in self.display_events])
+
+        # Publish events and optionally attach an image (rate-limited to 1 per minute)
+        for evt in frame_events:
+            if time.time() - self.last_image_publish_time >= 60.0:
+                import base64
+                _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+                evt.image_base64 = base64.b64encode(buffer).decode('utf-8')
+                self.last_image_publish_time = time.time()
+            self.publisher.publish(evt)
+
+        return annotated
 
     # ── Event factory ─────────────────────────────────────────────────────
 
