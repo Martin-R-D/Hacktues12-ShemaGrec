@@ -1,0 +1,118 @@
+.signup-root {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(76, 175, 80, 0.14), transparent 45%),
+    linear-gradient(180deg, #111316 0%, #0a0c0e 100%);
+}
+
+.signup-card {
+  width: 100%;
+  max-width: 360px;
+  padding: 22px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(20, 22, 24, 0.95);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+}
+
+.signup-title {
+  margin: 0;
+  color: #f7f4ee;
+  font-size: 22px;
+}
+
+.signup-subtitle {
+  margin: 8px 0 18px;
+  color: rgba(232, 228, 220, 0.68);
+  font-size: 13px;
+}
+
+.signup-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: rgba(232, 228, 220, 0.7);
+}
+
+.signup-label--spaced {
+  display: block;
+  margin: 12px 0 6px;
+  font-size: 12px;
+  color: rgba(232, 228, 220, 0.7);
+}
+
+.signup-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e8e4dc;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.signup-error {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(226, 75, 74, 0.13);
+  color: #e24b4a;
+  font-size: 12px;
+}
+
+.signup-btn-primary {
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 0;
+  border-radius: 8px;
+  border: none;
+  background: #4caf50;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.signup-btn-primary:hover:not(:disabled) {
+  background: #3d9140;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(76, 175, 80, 0.4);
+}
+
+.signup-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.signup-btn-primary:disabled {
+  background: rgba(255, 255, 255, 0.18);
+  cursor: default;
+}
+
+.signup-btn-secondary {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  background: transparent;
+  color: rgba(232, 228, 220, 0.85);
+  font-size: 12px;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.signup-btn-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #f7f4ee;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.signup-btn-secondary:active {
+  background: rgba(255, 255, 255, 0.09);
+}
