@@ -60,6 +60,7 @@ def parse_args():
     # https://s31.ipcamlive.com/streams/1f9owgjb5d471pdyu/stream.m3u8
     # get example URL from YouTube live stream thru:
     # yt-dlp -g "YOUTUBE_LIVESTREAM_URL"
+    # https://www.youtube.com/watch?v=U4L-omkVIBQ
     p.add_argument("--source",    action="append", required=True,
                    help="Video file, image dir, stream URL (rtsp://...), or '0' for webcam. Specify multiple times for multiple sources.")
     p.add_argument("--location",  action="append", default=[],

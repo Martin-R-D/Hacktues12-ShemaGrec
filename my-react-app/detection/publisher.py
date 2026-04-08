@@ -35,6 +35,10 @@ class EventPublisher:
             print(f"    [DRY RUN] Event logged only, no API upload")
             return
 
+        normalized_image = None
+        if evt.image_base64 and evt.image_base64.strip():
+            normalized_image = evt.image_base64.strip()
+
         payload = {
             "eventId": str(uuid.uuid4()),  # Unique dedup key
             "cameraId": self.camera_id,
@@ -45,8 +49,10 @@ class EventPublisher:
             "sourceType": "near"
         }
 
-        if evt.image_base64:
-            payload["imageBase64"] = evt.image_base64
+        if normalized_image:
+            # Send both naming styles for backward compatibility.
+            payload["imageBase64"] = normalized_image
+            payload["image_base64"] = normalized_image
 
         if evt.clip_path:
             payload["clipPath"] = evt.clip_path

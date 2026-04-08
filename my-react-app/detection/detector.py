@@ -131,6 +131,7 @@ class NearCrashDetector:
         self.events         : List[NearCrashEvent]      = []
         self.alert_cooldowns: Dict[Tuple[int, int], int] = {}
         self.display_events : List[Tuple[int, NearCrashEvent]] = []  # (frame_detected, event)
+<<<<<<< HEAD
         self.last_image_publish_time = 0.0
         
         # Frame buffer for video clip capture (~5 seconds of frames)
@@ -138,6 +139,9 @@ class NearCrashDetector:
         self.frame_buffer: collections.deque = collections.deque(maxlen=buffer_size)
         self.clips_dir = os.environ.get("CLIPS_DIR", "./clips")
         self.active_clip_thread: Optional[ClipWriterThread] = None
+=======
+        self.next_image_publish_time = 0.0
+>>>>>>> 436c4af25ef2f470cad6f9ce9f1474de9658bce1
 
         self.publisher = EventPublisher(log_file, camera_id, lat, lon, dry_run=dry_run)
 
@@ -376,8 +380,23 @@ class NearCrashDetector:
 
         annotated = self._annotate(frame, active_ids, [e for _, e in self.display_events])
 
-        # Publish events and optionally attach an image (rate-limited to 1 per minute)
+        # Publish the first event in each 60s window with a frame image attached.
+        image_payload: Optional[str] = None
+        now = time.time()
+        if frame_events and now >= self.next_image_publish_time:
+            import base64
+
+            success, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+            if success:
+                image_payload = base64.b64encode(buffer).decode('utf-8')
+                self.next_image_publish_time = now + 60.0
+
+        if image_payload:
+            for evt in frame_events:
+                evt.image_base64 = image_payload
+
         for evt in frame_events:
+<<<<<<< HEAD
             # Attach still image if rate limit allows
             if time.time() - self.last_image_publish_time >= 60.0:
                 import base64
@@ -404,6 +423,8 @@ class NearCrashDetector:
                 # We use a placeholder here since the thread generates the actual name
                 evt.clip_path = f"clip_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_<event_id>.mp4"
             
+=======
+>>>>>>> 436c4af25ef2f470cad6f9ce9f1474de9658bce1
             self.publisher.publish(evt)
 
         return annotated
