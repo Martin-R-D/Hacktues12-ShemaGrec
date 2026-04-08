@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "db:import-data": "npx tsx scripts/import-data.ts",
     "db:import-rankings": "npx tsx scripts/import-rankings.ts",
+    "db:import-plates": "npx tsx scripts/import-plates.ts",
     "setup-valhalla": "npx valhalla build_config --mjolnir-tile-dir valhalla_tiles --mjolnir-tile-extract valhalla_tiles.tar > config.json && npx valhalla build_tiles -c config.json bulgaria-260326.osm.pbf"
   },
   "dependencies": {

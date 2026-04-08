@@ -95,6 +95,7 @@ class PlateDB:
                     risk_score,
                 ),
             )
+        print(f"[DB] Recorded plate: {plate_number} | Event: {event_type} | Camera: {camera_id} | Risk: {risk_score}")
 
     def get_plate(self, plate_number: str) -> dict | None:
         """Return the summary row for a plate, or None if not found."""

@@ -117,7 +117,7 @@ const rankingSnapshotItemSchema = z.object({
   cord_y: z.number(),
   score: z.number().nonnegative(),
   type: z.enum(["near", "actual"]).optional(),
-  imageBase64: z.string().optional(),
+  imageBase64: z.string().nullable().optional(),
 });
 
 const rankingSnapshotSchema = z.object({

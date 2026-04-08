@@ -1,0 +1,42 @@
+[
+  {
+    "plate_number": "CA1234BT",
+    "first_seen": "2026-04-08T08:15:00Z",
+    "last_seen": "2026-04-09T09:45:00Z",
+    "warnings": 2,
+    "criticals": 1,
+    "risk_score": 8.1
+  },
+  {
+    "plate_number": "CB9081KM",
+    "first_seen": "2026-04-08T07:05:00Z",
+    "last_seen": "2026-04-09T09:10:00Z",
+    "warnings": 2,
+    "criticals": 0,
+    "risk_score": 4.4
+  },
+  {
+    "plate_number": "A4412NX",
+    "first_seen": "2026-04-08T06:40:00Z",
+    "last_seen": "2026-04-09T08:55:00Z",
+    "warnings": 1,
+    "criticals": 0,
+    "risk_score": 2.6
+  },
+  {
+    "plate_number": "PB7765HH",
+    "first_seen": "2026-04-08T09:00:00Z",
+    "last_seen": "2026-04-09T10:05:00Z",
+    "warnings": 1,
+    "criticals": 2,
+    "risk_score": 10.8
+  },
+  {
+    "plate_number": "B7878TX",
+    "first_seen": "2026-04-08T05:50:00Z",
+    "last_seen": "2026-04-09T09:30:00Z",
+    "warnings": 1,
+    "criticals": 0,
+    "risk_score": 3.1
+  }
+]
