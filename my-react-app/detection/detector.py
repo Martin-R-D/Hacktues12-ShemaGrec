@@ -119,7 +119,6 @@ class NearCrashDetector:
         self.events         : List[NearCrashEvent]      = []
         self.alert_cooldowns: Dict[Tuple[int, int], int] = {}
         self.display_events : List[Tuple[int, NearCrashEvent]] = []  # (frame_detected, event)
-<<<<<<< HEAD
         self.last_image_publish_time = 0.0
         
         # Frame buffer for video clip capture (~5 seconds of frames)
@@ -127,9 +126,7 @@ class NearCrashDetector:
         self.frame_buffer: collections.deque = collections.deque(maxlen=buffer_size)
         self.clips_dir = os.environ.get("CLIPS_DIR", "./clips")
         self.active_clip_thread: Optional[ClipWriterThread] = None
-=======
         self.next_image_publish_time = 0.0
->>>>>>> 436c4af25ef2f470cad6f9ce9f1474de9658bce1
 
         self.publisher = EventPublisher(log_file, camera_id, lat, lon, dry_run=dry_run)
 
