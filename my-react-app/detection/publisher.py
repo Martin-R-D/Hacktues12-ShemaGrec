@@ -48,6 +48,9 @@ class EventPublisher:
         if evt.image_base64:
             payload["imageBase64"] = evt.image_base64
 
+        if evt.clip_path:
+            payload["clipPath"] = evt.clip_path
+
         success = False
         for attempt in range(1, self.max_retries + 1):
             try:

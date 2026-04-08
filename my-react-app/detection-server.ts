@@ -1,9 +1,11 @@
 import express from "express";
 import { Pool } from "pg";
 import * as z from "zod";
+import path from "path";
 
 const app = express();
 const PORT = Number(process.env.DETECTION_PORT ?? 8005);
+const CLIPS_DIR = process.env.CLIPS_DIR ?? "./clips";
 
 const pool = new Pool({
   host: process.env.DB_HOST ?? "localhost",
@@ -16,29 +18,31 @@ const pool = new Pool({
 async function ensureSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS near_crash_events (
-      id           BIGSERIAL PRIMARY KEY,
-      event_id     TEXT UNIQUE NOT NULL,
-      camera_id    TEXT NOT NULL,
-      event_time   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      cord_x       DOUBLE PRECISION NOT NULL,
-      cord_y       DOUBLE PRECISION NOT NULL,
-      risk_weight  DOUBLE PRECISION NOT NULL,
-      source_type  TEXT NOT NULL DEFAULT 'near',
-      image_base64 TEXT,
-      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id                BIGSERIAL PRIMARY KEY,
+      event_id          TEXT UNIQUE NOT NULL,
+      camera_id         TEXT NOT NULL,
+      event_time        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      cord_x            DOUBLE PRECISION NOT NULL,
+      cord_y            DOUBLE PRECISION NOT NULL,
+      risk_weight       DOUBLE PRECISION NOT NULL,
+      source_type       TEXT NOT NULL DEFAULT 'near',
+      image_base64      TEXT,
+      video_clip_path   TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hotspot_rankings (
-      id           BIGSERIAL PRIMARY KEY,
-      rank         INTEGER NOT NULL,
-      cord_x       DOUBLE PRECISION NOT NULL,
-      cord_y       DOUBLE PRECISION NOT NULL,
-      score        DOUBLE PRECISION NOT NULL,
-      source_type  TEXT NOT NULL DEFAULT 'near',
-      image_base64 TEXT,
-      computed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      id                BIGSERIAL PRIMARY KEY,
+      rank              INTEGER NOT NULL,
+      cord_x            DOUBLE PRECISION NOT NULL,
+      cord_y            DOUBLE PRECISION NOT NULL,
+      score             DOUBLE PRECISION NOT NULL,
+      source_type       TEXT NOT NULL DEFAULT 'near',
+      image_base64      TEXT,
+      video_clip_path   TEXT,
+      computed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (cord_x, cord_y, source_type)
     )
   `);
@@ -57,6 +61,7 @@ const eventSchema = z.object({
   riskWeight: z.coerce.number().positive(),
   sourceType: z.enum(["near", "actual"]).default("near"),
   imageBase64: z.string().optional(),
+  clipPath: z.string().optional(),
 });
 
 const hotspotQuerySchema = z.object({
@@ -74,6 +79,7 @@ const rankingSnapshotItemSchema = z.object({
   score: z.number().nonnegative(),
   type: z.enum(["near", "actual"]).optional(),
   imageBase64: z.string().optional(),
+  videoClipPath: z.string().optional(),
 });
 
 const rankingSnapshotSchema = z.object({
@@ -81,6 +87,9 @@ const rankingSnapshotSchema = z.object({
 });
 
 app.use(express.json({ limit: "1mb" }));
+
+// Serve video clips as static files
+app.use("/clips", express.static(CLIPS_DIR));
 
 app.use((_, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
@@ -118,6 +127,7 @@ app.get("/api/hotspots", async (req, res) => {
       score: number;
       type: "near" | "actual";
       image_base64: string | null;
+      video_clip_path: string | null;
       computed_at: string;
     }>(
       `SELECT
@@ -127,6 +137,7 @@ app.get("/api/hotspots", async (req, res) => {
          score,
          source_type AS type,
          image_base64,
+         video_clip_path,
          computed_at
        FROM hotspot_rankings
        ORDER BY rank ASC
@@ -136,7 +147,10 @@ app.get("/api/hotspots", async (req, res) => {
 
     res.json({
       computedAt: rows[0]?.computed_at ?? null,
-      hotspots: rows,
+      hotspots: rows.map((row) => ({
+        ...row,
+        video_url: row.video_clip_path ? `/clips/${row.video_clip_path}` : undefined,
+      })),
     });
   } catch (err) {
     console.error("[detection] Failed to fetch hotspots:", err);
@@ -219,9 +233,10 @@ app.post("/api/hotspots/snapshot", async (req, res) => {
           score,
           source_type,
           image_base64,
+          video_clip_path,
           computed_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [h.rank, h.cord_x, h.cord_y, h.score, h.type ?? "near", h.imageBase64 ?? null],
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+        [h.rank, h.cord_x, h.cord_y, h.score, h.type ?? "near", h.imageBase64 ?? null, h.videoClipPath ?? null],
       );
     }
 
@@ -259,8 +274,9 @@ app.post("/api/events", async (req, res) => {
         cord_y,
         risk_weight,
         source_type,
-        image_base64
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        image_base64,
+        video_clip_path
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       ON CONFLICT (event_id) DO NOTHING
       RETURNING id`,
       [
@@ -272,6 +288,7 @@ app.post("/api/events", async (req, res) => {
         event.riskWeight,
         event.sourceType,
         event.imageBase64 ?? null,
+        event.clipPath ?? null,
       ],
     );
 
