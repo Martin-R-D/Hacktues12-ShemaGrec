@@ -34,6 +34,7 @@ class ClipWriterThread(threading.Thread):
         fps: float,
         width: int,
         height: int,
+        filename: str,
         clips_dir: str = "clips",
         post_event_frames: int = 90,  # ~3s at 30fps
     ):
@@ -44,19 +45,16 @@ class ClipWriterThread(threading.Thread):
         self.fps = fps
         self.width = width
         self.height = height
+        self.filename = filename
         self.clips_dir = clips_dir
         self.post_event_frames = post_event_frames
-        self.event_id = str(uuid.uuid4())[:8]
         
     def run(self):
         """Write clip in background. Never raise exceptions."""
         try:
             os.makedirs(self.clips_dir, exist_ok=True)
             
-            # Generate filename with timestamp and event ID
-            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            filename = f"clip_{ts}_{self.event_id}.mp4"
-            filepath = os.path.join(self.clips_dir, filename)
+            filepath = os.path.join(self.clips_dir, self.filename)
             
             # Create video writer (H.264 as fallback codec)
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -78,33 +76,23 @@ class ClipWriterThread(threading.Thread):
                 )
             
             if not writer.isOpened():
-                print(f"[WARN] Failed to open VideoWriter for clip {self.event_id}")
+                print(f"[WARN] Failed to open VideoWriter for clip {self.filename}")
                 return
             
             # Write buffered frames (pre-event, ~5s)
             for frame in self.frame_buffer:
                 writer.write(frame)
             
-            # Write current frame + placeholder for post-event frames
-            # (actual post-event frames will be added by detector; we write current + post count here)
+            # Write current frame + post-event frames
             writer.write(self.current_frame)
-            
-            # Placeholder: write current frame repeated for post-event duration
-            # (In production, detector would call add_post_event_frame, but for simplicity,
-            #  we just repeat the current frame to indicate post-event window)
             for _ in range(self.post_event_frames - 1):
                 writer.write(self.current_frame)
             
             writer.release()
             print(f"[INFO] Video clip saved: {filepath}")
             
-            # Store the relative path for API (without 'clips/' prefix, just filename)
-            # The API will prepend /clips/ when returning video_url
-            self._clip_path = filename
-            
         except Exception as e:
             print(f"[WARN] Exception in ClipWriterThread: {e}")
-            # Never crash the main detector
 
 
 class NearCrashDetector:
@@ -396,7 +384,6 @@ class NearCrashDetector:
                 evt.image_base64 = image_payload
 
         for evt in frame_events:
-<<<<<<< HEAD
             # Attach still image if rate limit allows
             if time.time() - self.last_image_publish_time >= 60.0:
                 import base64
@@ -406,6 +393,10 @@ class NearCrashDetector:
             
             # Spawn background thread to write video clip (no rate limit, always write)
             if len(self.frame_buffer) > 0:
+                # Generate filename in main thread before spawning background thread
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                clip_filename = f"clip_{ts}_{str(uuid.uuid4())[:8]}.mp4"
+                
                 clip_thread = ClipWriterThread(
                     frame_buffer=self.frame_buffer,
                     current_frame=annotated,
@@ -413,18 +404,16 @@ class NearCrashDetector:
                     fps=self.fps,
                     width=self.width,
                     height=self.height,
+                    filename=clip_filename,
                     clips_dir=self.clips_dir,
                     post_event_frames=int(self.fps * 3),  # ~3 seconds
                 )
                 clip_thread.start()
                 self.active_clip_thread = clip_thread
                 
-                # Set clip path on event (filename will be generated in thread)
-                # We use a placeholder here since the thread generates the actual name
-                evt.clip_path = f"clip_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_<event_id>.mp4"
+                # Set clip path on event to the pre-generated filename
+                evt.clip_path = clip_filename
             
-=======
->>>>>>> 436c4af25ef2f470cad6f9ce9f1474de9658bce1
             self.publisher.publish(evt)
 
         return annotated
