@@ -101,7 +101,6 @@ class NearCrashEvent:
     proximity_ratio   : float
     ttc_seconds       : Optional[float]
     image_base64      : Optional[str] = None
-    clip_path         : Optional[str] = None
 
     @property
     def risk_weight(self) -> int:

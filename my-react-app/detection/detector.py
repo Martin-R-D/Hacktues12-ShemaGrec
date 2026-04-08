@@ -1,10 +1,6 @@
-import collections
 import math
-import os
 import subprocess
-import threading
 import time
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -21,78 +17,6 @@ from rules import (
 )
 from geometry import center_distance, path_deviation, set_homography, Homography
 from publisher import EventPublisher
-
-
-class ClipWriterThread(threading.Thread):
-    """Background thread to write video clips without blocking detection."""
-    
-    def __init__(
-        self,
-        frame_buffer: collections.deque,
-        current_frame: np.ndarray,
-        frame_idx: int,
-        fps: float,
-        width: int,
-        height: int,
-        filename: str,
-        clips_dir: str = "clips",
-        post_event_frames: int = 90,  # ~3s at 30fps
-    ):
-        super().__init__(daemon=True)
-        self.frame_buffer = collections.deque(frame_buffer)  # Copy buffer snapshot
-        self.current_frame = current_frame.copy()
-        self.frame_idx = frame_idx
-        self.fps = fps
-        self.width = width
-        self.height = height
-        self.filename = filename
-        self.clips_dir = clips_dir
-        self.post_event_frames = post_event_frames
-        
-    def run(self):
-        """Write clip in background. Never raise exceptions."""
-        try:
-            os.makedirs(self.clips_dir, exist_ok=True)
-            
-            filepath = os.path.join(self.clips_dir, self.filename)
-            
-            # Create video writer (H.264 as fallback codec)
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            writer = cv2.VideoWriter(
-                filepath,
-                fourcc,
-                self.fps,
-                (self.width, self.height)
-            )
-            
-            if not writer.isOpened():
-                print(f"[WARN] Failed to open VideoWriter for {filepath}, retrying with H264...")
-                fourcc = cv2.VideoWriter_fourcc(*"H264")
-                writer = cv2.VideoWriter(
-                    filepath,
-                    fourcc,
-                    self.fps,
-                    (self.width, self.height)
-                )
-            
-            if not writer.isOpened():
-                print(f"[WARN] Failed to open VideoWriter for clip {self.filename}")
-                return
-            
-            # Write buffered frames (pre-event, ~5s)
-            for frame in self.frame_buffer:
-                writer.write(frame)
-            
-            # Write current frame + post-event frames
-            writer.write(self.current_frame)
-            for _ in range(self.post_event_frames - 1):
-                writer.write(self.current_frame)
-            
-            writer.release()
-            print(f"[INFO] Video clip saved: {filepath}")
-            
-        except Exception as e:
-            print(f"[WARN] Exception in ClipWriterThread: {e}")
 
 
 class NearCrashDetector:
@@ -120,12 +44,6 @@ class NearCrashDetector:
         self.alert_cooldowns: Dict[Tuple[int, int], int] = {}
         self.display_events : List[Tuple[int, NearCrashEvent]] = []  # (frame_detected, event)
         self.last_image_publish_time = 0.0
-        
-        # Frame buffer for video clip capture (~5 seconds of frames)
-        buffer_size = max(1, int(self.fps * 5))  # 5 seconds at current FPS
-        self.frame_buffer: collections.deque = collections.deque(maxlen=buffer_size)
-        self.clips_dir = os.environ.get("CLIPS_DIR", "./clips")
-        self.active_clip_thread: Optional[ClipWriterThread] = None
         self.next_image_publish_time = 0.0
 
         self.publisher = EventPublisher(log_file, camera_id, lat, lon, dry_run=dry_run)
@@ -257,9 +175,6 @@ class NearCrashDetector:
     # ── Per-frame logic ───────────────────────────────────────────────────
 
     def _process_frame(self, frame: np.ndarray) -> np.ndarray:
-        # Update frame buffer for video clip capture
-        self.frame_buffer.append(frame.copy())
-        
         all_class_ids = list(Config.VEHICLE_CLASS_IDS | Config.NON_VEHICLE_CLASS_IDS)
 
         results = self.model.track(
@@ -381,36 +296,11 @@ class NearCrashDetector:
                 evt.image_base64 = image_payload
 
         for evt in frame_events:
-            # Attach still image if rate limit allows
             if time.time() - self.last_image_publish_time >= 60.0:
                 import base64
                 _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
                 evt.image_base64 = base64.b64encode(buffer).decode('utf-8')
                 self.last_image_publish_time = time.time()
-            
-            # Spawn background thread to write video clip (no rate limit, always write)
-            if len(self.frame_buffer) > 0:
-                # Generate filename in main thread before spawning background thread
-                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-                clip_filename = f"clip_{ts}_{str(uuid.uuid4())[:8]}.mp4"
-                
-                clip_thread = ClipWriterThread(
-                    frame_buffer=self.frame_buffer,
-                    current_frame=annotated,
-                    frame_idx=self.frame_idx,
-                    fps=self.fps,
-                    width=self.width,
-                    height=self.height,
-                    filename=clip_filename,
-                    clips_dir=self.clips_dir,
-                    post_event_frames=int(self.fps * 3),  # ~3 seconds
-                )
-                clip_thread.start()
-                self.active_clip_thread = clip_thread
-                
-                # Set clip path on event to the pre-generated filename
-                evt.clip_path = clip_filename
-            
             self.publisher.publish(evt)
 
         return annotated
@@ -633,10 +523,6 @@ class NearCrashDetector:
         print("=" * 65)
 
     def _cleanup(self):
-        # Wait for active clip thread to finish
-        if self.active_clip_thread:
-            self.active_clip_thread.join(timeout=10)
-        
         self.cap.release()
         if self.restream_proc and self.restream_proc.poll() is None:
             self.restream_proc.terminate()

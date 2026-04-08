@@ -29,7 +29,7 @@ type Severity = "high" | "medium" | "low";
 
 type IncidentType = "actual" | "near";
 
-type IncidentEvent = { lat: number; lng: number; weight: number; type: IncidentType; dbImageBase64?: string; dbVideoUrl?: string };
+type IncidentEvent = { lat: number; lng: number; weight: number; type: IncidentType; dbImageBase64?: string };
 
 type Incident = IncidentEvent & {
   id: number;
@@ -38,7 +38,6 @@ type Incident = IncidentEvent & {
   count: number;
   camera: string;
   imageUrl?: string;
-  videoUrl?: string;
 };
 
 type RouteInfo = {
@@ -93,7 +92,6 @@ type HotspotApiRow = {
   score: number;
   type?: string;
   image_base64?: string;
-  video_url?: string;
 };
 
 type HotspotApiResponse = {
@@ -450,7 +448,6 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
           weight: r.score,
           type: r.type === "near" ? ("near" as const) : ("actual" as const),
           dbImageBase64: r.image_base64,
-          dbVideoUrl: r.video_url,
         }));
 
         setIncidents(nextIncidents);
@@ -488,7 +485,6 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
       incidents.map((e, i) => {
         const images = ["/snapshots/cam1.png", "/snapshots/cam2.png"];
         const imageUrl = e.dbImageBase64 ? `data:image/jpeg;base64,${e.dbImageBase64}` : images[i % images.length];
-        const videoUrl = e.dbVideoUrl;
 
         return {
           ...e,
@@ -498,7 +494,6 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
           count: Math.max(1, Math.round(e.weight / 2)),
           camera: `CAM-${String(i + 1).padStart(2, "0")}`,
           imageUrl,
-          videoUrl,
         };
       }),
     [incidents],
@@ -1029,21 +1024,7 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
                 x
               </button>
             </div>
-            {selectedIncident.videoUrl ? (
-              <div style={{ position: "relative", marginTop: 12, marginBottom: 12, borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
-                <video
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
-                  src={selectedIncident.videoUrl}
-                  style={{ width: "100%", height: "auto", display: "block", aspectRatio: "16/9", objectFit: "cover", backgroundColor: "#000" }}
-                />
-                <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", color: "#fff", padding: "4px 8px", fontSize: 10, borderRadius: 4, fontFamily: "monospace", letterSpacing: "1px" }}>
-                  {selectedIncident.camera} • VIDEO
-                </div>
-              </div>
-            ) : selectedIncident.imageUrl ? (
+            {selectedIncident.imageUrl && (
               <div style={{ position: "relative", marginTop: 12, marginBottom: 12, borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
                 <img
                   src={selectedIncident.imageUrl}
@@ -1054,7 +1035,7 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
                   {selectedIncident.camera} • REC
                 </div>
               </div>
-            ) : null}
+            )}
             <div
               style={{
                 marginTop: 0,
@@ -1670,20 +1651,20 @@ function RoutePanel({
                         info.difficulty === "easy"
                           ? "rgba(99,153,34,0.16)"
                           : info.difficulty === "moderate"
-                            ? "rgba(239,159,39,0.16)"
-                            : "rgba(226,75,74,0.16)",
+                          ? "rgba(239,159,39,0.16)"
+                          : "rgba(226,75,74,0.16)",
                       border:
                         info.difficulty === "easy"
                           ? "1px solid rgba(99,153,34,0.45)"
                           : info.difficulty === "moderate"
-                            ? "1px solid rgba(239,159,39,0.45)"
-                            : "1px solid rgba(226,75,74,0.45)",
+                          ? "1px solid rgba(239,159,39,0.45)"
+                          : "1px solid rgba(226,75,74,0.45)",
                       color:
                         info.difficulty === "easy"
                           ? "#8BC34A"
                           : info.difficulty === "moderate"
-                            ? "#EF9F27"
-                            : "#E24B4A",
+                          ? "#EF9F27"
+                          : "#E24B4A",
                       fontWeight: 600,
                       textTransform: "capitalize",
                     }}
