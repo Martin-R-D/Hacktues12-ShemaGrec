@@ -1,0 +1,290 @@
+.plate-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plate-dashboard__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plate-dashboard__eyebrow,
+.plate-dashboard__events-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232, 228, 220, 0.45);
+}
+
+.plate-dashboard__title,
+.plate-dashboard__events-title {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f4f0e8;
+}
+
+.plate-dashboard__summary-pill {
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  color: rgba(232, 228, 220, 0.7);
+}
+
+.plate-dashboard__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plate-dashboard__toolbar-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.plate-dashboard__search,
+.plate-dashboard__select,
+.plate-dashboard__direction-button {
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e8e4dc;
+  font-size: 12px;
+}
+
+.plate-dashboard__search,
+.plate-dashboard__select {
+  width: 100%;
+  padding: 9px 12px;
+}
+
+.plate-dashboard__direction-button {
+  padding: 9px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.plate-dashboard__search::placeholder {
+  color: rgba(232, 228, 220, 0.35);
+}
+
+.plate-dashboard__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.plate-dashboard__stat-card {
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.plate-dashboard__stat-card span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(232, 228, 220, 0.45);
+}
+
+.plate-dashboard__stat-card strong {
+  display: block;
+  min-height: 16px;
+  font-size: 12px;
+  color: #f4f0e8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plate-dashboard__table-wrap {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.plate-dashboard__table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.plate-dashboard__table th {
+  padding: 0 10px 10px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232, 228, 220, 0.45);
+}
+
+.plate-dashboard__table td {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: rgba(232, 228, 220, 0.86);
+  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.plate-dashboard__table td:first-child {
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px 0 0 10px;
+}
+
+.plate-dashboard__table td:last-child {
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0 10px 10px 0;
+}
+
+.plate-dashboard__row--selected td {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.plate-dashboard__row--high td:first-child {
+  box-shadow: inset 3px 0 0 #e24b4a;
+}
+
+.plate-dashboard__row--medium td:first-child {
+  box-shadow: inset 3px 0 0 #ef9f27;
+}
+
+.plate-dashboard__row--low td:first-child {
+  box-shadow: inset 3px 0 0 #639922;
+}
+
+.plate-dashboard__plate-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plate-dashboard__plate-number {
+  font-weight: 700;
+  color: #f4f0e8;
+}
+
+.plate-dashboard__risk-accent,
+.plate-dashboard__score-badge,
+.plate-dashboard__metric {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 32px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.plate-dashboard__risk-accent--high,
+.plate-dashboard__score-badge--high,
+.plate-dashboard__metric--critical {
+  background: rgba(226, 75, 74, 0.14);
+  border-color: rgba(226, 75, 74, 0.32);
+  color: #ff8f87;
+}
+
+.plate-dashboard__risk-accent--medium,
+.plate-dashboard__score-badge--medium,
+.plate-dashboard__metric--warn {
+  background: rgba(239, 159, 39, 0.14);
+  border-color: rgba(239, 159, 39, 0.32);
+  color: #f6bb59;
+}
+
+.plate-dashboard__risk-accent--low,
+.plate-dashboard__score-badge--low {
+  background: rgba(99, 153, 34, 0.14);
+  border-color: rgba(99, 153, 34, 0.32);
+  color: #8fc84c;
+}
+
+.plate-dashboard__events-button {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e8e4dc;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.plate-dashboard__state {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  color: rgba(232, 228, 220, 0.75);
+}
+
+.plate-dashboard__state--error {
+  border-color: rgba(226, 75, 74, 0.28);
+  background: rgba(226, 75, 74, 0.1);
+  color: #ff9186;
+}
+
+.plate-dashboard__state--compact {
+  padding: 10px 12px;
+}
+
+.plate-dashboard__events-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.plate-dashboard__events-header,
+.plate-dashboard__event-topline,
+.plate-dashboard__event-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plate-dashboard__events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plate-dashboard__event-item {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.plate-dashboard__event-topline strong {
+  font-size: 12px;
+  color: #f4f0e8;
+}
+
+.plate-dashboard__event-meta {
+  margin-top: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: rgba(232, 228, 220, 0.62);
+}

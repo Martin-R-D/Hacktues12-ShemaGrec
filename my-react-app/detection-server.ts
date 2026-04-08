@@ -107,6 +107,14 @@ const eventsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(5000).optional(),
 });
 
+const plateEventsParamsSchema = z.object({
+  plateNumber: z.string().trim().min(1).max(32),
+});
+
+const plateEventsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(100).optional(),
+});
+
 const rankingSnapshotItemSchema = z.object({
   rank: z.number().int().positive(),
   cord_x: z.number(),
@@ -243,6 +251,95 @@ app.get("/api/events", async (req, res) => {
   } catch (err) {
     console.error("[detection] Failed to fetch events:", err);
     res.status(500).json({ error: "Failed to fetch events" });
+  }
+});
+
+app.get("/api/plates", async (_req, res) => {
+  try {
+    const { rows } = await pool.query<{
+      id: number;
+      plate_number: string;
+      first_seen: string;
+      last_seen: string;
+      warnings: number;
+      criticals: number;
+      risk_score: number;
+    }>(
+      `SELECT
+         id,
+         plate_number,
+         first_seen,
+         last_seen,
+         warnings,
+         criticals,
+         risk_score
+       FROM plates
+       ORDER BY risk_score DESC NULLS LAST, last_seen DESC NULLS LAST`,
+    );
+
+    res.json({
+      plates: rows.map((row) => ({
+        id: row.id,
+        plateNumber: row.plate_number,
+        firstSeen: row.first_seen,
+        lastSeen: row.last_seen,
+        warnings: row.warnings,
+        criticals: row.criticals,
+        riskScore: row.risk_score,
+      })),
+    });
+  } catch (err) {
+    console.error("[detection] Failed to fetch plates:", err);
+    res.status(500).json({ error: "Failed to fetch plates" });
+  }
+});
+
+app.get("/api/plates/:plateNumber/events", async (req, res) => {
+  const paramsParsed = plateEventsParamsSchema.safeParse(req.params);
+  const queryParsed = plateEventsQuerySchema.safeParse(req.query);
+
+  if (!paramsParsed.success || !queryParsed.success) {
+    res.status(400).json({ error: "Invalid query parameters" });
+    return;
+  }
+
+  const { plateNumber } = paramsParsed.data;
+  const limit = queryParsed.data.limit ?? 10;
+
+  try {
+    const { rows } = await pool.query<{
+      time: string;
+      plate_number: string;
+      event_type: string | null;
+      camera_id: string | null;
+      risk_score: number;
+    }>(
+      `SELECT
+         time,
+         plate_number,
+         event_type,
+         camera_id,
+         risk_score
+       FROM plate_events
+       WHERE plate_number = $1
+       ORDER BY time DESC
+       LIMIT $2`,
+      [plateNumber, limit],
+    );
+
+    res.json({
+      plateNumber,
+      events: rows.map((row) => ({
+        time: row.time,
+        plateNumber: row.plate_number,
+        eventType: row.event_type,
+        cameraId: row.camera_id,
+        riskScore: row.risk_score,
+      })),
+    });
+  } catch (err) {
+    console.error(`[detection] Failed to fetch events for plate ${plateNumber}:`, err);
+    res.status(500).json({ error: "Failed to fetch plate events" });
   }
 });
 

@@ -1,14 +1,15 @@
 /* --- Tab Button Styles for Hotspots/Route --- */
 .tab-btn {
   flex: 1;
-  padding: 11px 0;
+  padding: 11px 4px;
   border: none;
   background: none;
   color: rgba(232,228,220,0.35);
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
   transition: color 0.18s, border-bottom 0.18s;
 }
 .tab-btn-active {

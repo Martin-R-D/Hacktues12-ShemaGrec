@@ -17,6 +17,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
+import PlateRegistryDashboard from "./components/PlateRegistryDashboard";
 import SignInPage from "./SignInPage";
 import SignUpPage from "./SignUpPage";
 
@@ -390,7 +391,7 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
   const [routeLoading, setRouteLoading] = useState(false);
   const [showMarkers, setShowMarkers] = useState(true);
   const [mapPickMode, setMapPickMode] = useState<MapPickMode>(null);
-  const [tab, setTab] = useState<"heatmap" | "route" | "myPlaces">("heatmap");
+  const [tab, setTab] = useState<"heatmap" | "route" | "myPlaces" | "plates">("heatmap");
   const [routePolylines, setRoutePolylines] = useState<RoutePolyline[]>([]);
   const [panTarget, setPanTarget] = useState<[number, number] | null>(null);
   const [panSeq, setPanSeq] = useState(0);
@@ -785,7 +786,7 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
 
         {/* -- tabs -- */}
         <div className="tab-row">
-          {(["heatmap", "route", "myPlaces"] as const).map((value) => (
+          {(["heatmap", "route", "myPlaces", "plates"] as const).map((value) => (
             <button
               key={value}
               onClick={() => setTab(value)}
@@ -795,7 +796,9 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
                 ? "Hotspots"
                 : value === "route"
                   ? "Route"
-                  : "My places"}
+                  : value === "myPlaces"
+                    ? "My places"
+                    : "Plates"}
             </button>
           ))}
         </div>
@@ -843,7 +846,7 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
               onCalcRoute={() => void calcRoute()}
               onClearRoute={clearRoute}
             />
-          ) : (
+          ) : tab === "myPlaces" ? (
             <MyPlacesPanel
               places={userPlaces}
               loading={placesLoading}
@@ -856,6 +859,8 @@ function SafetyMapApp({ authToken }: { authToken: string }) {
               onStartPick={() => setMapPickMode(mapPickMode === "myPlace" ? null : "myPlace")}
               onSavePlace={() => void savePlace()}
             />
+          ) : (
+            <PlateRegistryDashboard />
           )}
         </div>
 
