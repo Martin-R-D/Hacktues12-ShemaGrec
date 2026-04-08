@@ -36,7 +36,6 @@ CREATE TABLE IF NOT EXISTS near_crash_events (
     cord_y       DOUBLE PRECISION NOT NULL,
     risk_weight  DOUBLE PRECISION NOT NULL,
     source_type  TEXT NOT NULL DEFAULT 'near',
-    image_base64 TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -53,7 +52,6 @@ CREATE TABLE IF NOT EXISTS hotspot_rankings (
     cord_y       DOUBLE PRECISION NOT NULL,
     score        DOUBLE PRECISION NOT NULL,
     source_type  TEXT NOT NULL DEFAULT 'near',
-    image_base64 TEXT,
     computed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (cord_x, cord_y, source_type)
 );

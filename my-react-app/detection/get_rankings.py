@@ -33,7 +33,7 @@ DETECTED_WEIGHT   = 1.0   # base multiplier for detected near-crash entries
 CONFIDENCE_K      = 0.05  # confidence growth rate: conf = 1 - exp(-k * Σ detected_weights)
                            # at Σ=20 → conf≈0.63, at Σ=60 → conf≈0.95
 MERGE_RADIUS_M    = 50.0  # hotspots within this distance (metres) are merged
-MIN_SCORE = 2
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -84,8 +84,7 @@ def _merge(hotspots: List[dict], lat: float, lon: float, score: float, image_bas
             if image_base64 and not h.get("imageBase64"):
                 h["imageBase64"] = image_base64
             return
-    if score > MIN_SCORE:
-        hotspots.append({
+    hotspots.append({
         "cord_x": round(lon, 7), 
         "cord_y": round(lat, 7), 
         "score": score,
@@ -131,9 +130,6 @@ def get_rankings(
 
     for h in detected:
         score = h.get("risk_weight", 0) * DETECTED_WEIGHT * confidence
-        
-        # _merge eats away hotspots with risk score
-        # lower than that set as MIN_SCORE
         _merge(hotspots, h["cord_y"], h["cord_x"], score, h.get("image_base64"))
 
     hotspots.sort(key=lambda h: h["score"], reverse=True)
