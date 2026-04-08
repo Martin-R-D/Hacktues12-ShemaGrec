@@ -43,7 +43,7 @@ class NearCrashDetector:
         self.events         : List[NearCrashEvent]      = []
         self.alert_cooldowns: Dict[Tuple[int, int], int] = {}
         self.display_events : List[Tuple[int, NearCrashEvent]] = []  # (frame_detected, event)
-        self.last_image_publish_time = 0.0
+        self.next_image_publish_time = 0.0
 
         self.publisher = EventPublisher(log_file, camera_id, lat, lon, dry_run=dry_run)
 
@@ -279,13 +279,22 @@ class NearCrashDetector:
 
         annotated = self._annotate(frame, active_ids, [e for _, e in self.display_events])
 
-        # Publish events and optionally attach an image (rate-limited to 1 per minute)
+        # Publish the first event in each 60s window with a frame image attached.
+        image_payload: Optional[str] = None
+        now = time.time()
+        if frame_events and now >= self.next_image_publish_time:
+            import base64
+
+            success, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+            if success:
+                image_payload = base64.b64encode(buffer).decode('utf-8')
+                self.next_image_publish_time = now + 60.0
+
+        if image_payload:
+            for evt in frame_events:
+                evt.image_base64 = image_payload
+
         for evt in frame_events:
-            if time.time() - self.last_image_publish_time >= 60.0:
-                import base64
-                _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
-                evt.image_base64 = base64.b64encode(buffer).decode('utf-8')
-                self.last_image_publish_time = time.time()
             self.publisher.publish(evt)
 
         return annotated

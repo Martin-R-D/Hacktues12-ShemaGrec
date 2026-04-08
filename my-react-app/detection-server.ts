@@ -1,3 +1,16 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+/*
+Navigation endpoints
+Requirements: PLEASE setup an .env file with following format:
+DB_HOST=""
+DB_PORT=""
+DB_NAME=""
+DB_USER=""
+DB_PASS=""
+*/
+
 import express from "express";
 import { Pool } from "pg";
 import * as z from "zod";
@@ -6,11 +19,11 @@ const app = express();
 const PORT = Number(process.env.DETECTION_PORT ?? 8005);
 
 const pool = new Pool({
-  host: process.env.DB_HOST ?? "localhost",
+  host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT ?? 5440),
-  database: process.env.DB_NAME ?? "plates",
-  user: process.env.DB_USER ?? "admin",
-  password: process.env.DB_PASS ?? "admin",
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
 });
 
 async function ensureSchema() {
@@ -29,6 +42,11 @@ async function ensureSchema() {
     )
   `);
 
+  // Backfill schema changes for existing databases created before image support.
+  await pool.query(
+    "ALTER TABLE near_crash_events ADD COLUMN IF NOT EXISTS image_base64 TEXT",
+  );
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hotspot_rankings (
       id           BIGSERIAL PRIMARY KEY,
@@ -43,21 +61,39 @@ async function ensureSchema() {
     )
   `);
 
+  // Backfill schema changes for existing databases created before image support.
+  await pool.query(
+    "ALTER TABLE hotspot_rankings ADD COLUMN IF NOT EXISTS image_base64 TEXT",
+  );
+
   await pool.query(
     "CREATE INDEX IF NOT EXISTS idx_hotspot_rankings_rank ON hotspot_rankings (rank ASC)",
   );
 }
 
-const eventSchema = z.object({
-  eventId: z.string().min(1),
-  cameraId: z.string().min(1),
-  eventTime: z.string().datetime({ offset: true, local: true }).optional(),
-  lat: z.coerce.number().min(-90).max(90),
-  lng: z.coerce.number().min(-180).max(180),
-  riskWeight: z.coerce.number().positive(),
-  sourceType: z.enum(["near", "actual"]).default("near"),
-  imageBase64: z.string().optional(),
-});
+const optionalImageSchema = z.preprocess((value) => {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}, z.string().optional());
+
+const eventSchema = z
+  .object({
+    eventId: z.string().min(1),
+    cameraId: z.string().min(1),
+    eventTime: z.string().datetime({ offset: true, local: true }).optional(),
+    lat: z.coerce.number().min(-90).max(90),
+    lng: z.coerce.number().min(-180).max(180),
+    riskWeight: z.coerce.number().positive(),
+    sourceType: z.enum(["near", "actual"]).default("near"),
+    imageBase64: optionalImageSchema.optional(),
+    image_base64: optionalImageSchema.optional(),
+  })
+  .transform((data) => ({
+    ...data,
+    imageBase64: data.imageBase64 ?? data.image_base64,
+  }));
 
 const hotspotQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
@@ -67,14 +103,20 @@ const eventsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(5000).optional(),
 });
 
-const rankingSnapshotItemSchema = z.object({
-  rank: z.number().int().positive(),
-  cord_x: z.number(),
-  cord_y: z.number(),
-  score: z.number().nonnegative(),
-  type: z.enum(["near", "actual"]).optional(),
-  imageBase64: z.string().optional(),
-});
+const rankingSnapshotItemSchema = z
+  .object({
+    rank: z.number().int().positive(),
+    cord_x: z.number(),
+    cord_y: z.number(),
+    score: z.number().nonnegative(),
+    type: z.enum(["near", "actual"]).optional(),
+    imageBase64: optionalImageSchema.optional(),
+    image_base64: optionalImageSchema.optional(),
+  })
+  .transform((data) => ({
+    ...data,
+    imageBase64: data.imageBase64 ?? data.image_base64,
+  }));
 
 const rankingSnapshotSchema = z.object({
   hotspots: z.array(rankingSnapshotItemSchema),
@@ -198,6 +240,8 @@ app.get("/api/events", async (req, res) => {
   }
 });
 
+// try to replace old snapshot with new snapshot, where
+// snapshot - collection of hotspot rankings worth displaying on the frontend
 app.post("/api/hotspots/snapshot", async (req, res) => {
   const parsed = rankingSnapshotSchema.safeParse(req.body);
   if (!parsed.success) {

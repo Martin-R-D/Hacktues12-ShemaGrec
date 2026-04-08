@@ -1,3 +1,16 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+/*
+Navigation endpoints
+Requirements: PLEASE setup an .env file with following format:
+DB_HOST=""
+DB_PORT=""
+DB_NAME=""
+DB_USER=""
+DB_PASS=""
+*/
+
 import express from "express";
 import { Actor } from "@valhallajs/valhallajs";
 import jwt from "jsonwebtoken";
@@ -11,11 +24,19 @@ type AuthTokenPayload = {
   sub: string;
 };
 
-const DB_HOST = process.env.DB_HOST ?? "db";
-const DB_PORT = Number(process.env.DB_PORT ?? "5432");
-const DB_NAME = process.env.DB_NAME ?? "plates";
-const DB_USER = process.env.DB_USER ?? "admin";
-const DB_PASS = process.env.DB_PASS ?? "admin";
+type SequelizeErrorLike = Error & {
+  name?: string;
+  parent?: {
+    code?: string;
+  };
+};
+
+const DB_HOST = process.env.DB_HOST;
+const DB_PORT = Number(process.env.DB_PORT || 5432);
+const DB_NAME = process.env.DB_NAME;
+const DB_USER = process.env.DB_USER;
+const DB_PASS = process.env.DB_PASS;
+
 
 // Initialize Sequelize with PostgreSQL
 const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASS, {
@@ -280,13 +301,18 @@ app.post("/auth/signUp", async (req, res) => {
       expiresIn: "1h",
     });
     res.status(201).json({ token, username: newUser.username });
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Handle duplicate username error
-    if (error.name === "SequelizeUniqueConstraintError" || (error.parent && error.parent.code === '23505')) {
+    const sequelizeError = error as SequelizeErrorLike;
+    if (
+      error instanceof Error &&
+      (sequelizeError.name === "SequelizeUniqueConstraintError" ||
+        sequelizeError.parent?.code === "23505")
+    ) {
       res.status(409).json({ error: "Username already exists" });
       return;
     }
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unknown error" });
   }
 });
 
