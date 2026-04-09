@@ -509,3 +509,260 @@ select:focus {
   background: #fff;
   transition: left 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+.app-shell {
+  position: relative;
+}
+
+.logout-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2000;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(20, 22, 24, 0.8);
+  color: rgba(232, 228, 220, 0.9);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.panel-card {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.panel-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+}
+
+.panel-muted {
+  font-size: 12px;
+  color: rgba(232, 228, 220, 0.6);
+}
+
+.panel-muted-small {
+  font-size: 10px;
+  color: rgba(232, 228, 220, 0.45);
+}
+
+.incident-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.incident-name {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.incident-row-meta {
+  display: flex;
+  gap: 10px;
+  padding-left: 16px;
+  font-size: 10px;
+  color: rgba(232, 228, 220, 0.4);
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: rgba(232, 228, 220, 0.45);
+}
+
+.form-label-gap {
+  margin-top: 12px;
+}
+
+.pick-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.map-pick-hint {
+  margin-top: 8px;
+  font-size: 10px;
+  color: rgba(232, 228, 220, 0.55);
+}
+
+.avoid-note {
+  color: rgba(232, 228, 220, 0.72);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.route-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.route-card-stats {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: rgba(232, 228, 220, 0.65);
+  flex-wrap: wrap;
+}
+
+.route-error-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(226, 75, 74, 0.1);
+  color: #e24b4a;
+  font-size: 12px;
+}
+
+.place-picked-text {
+  margin-top: 10px;
+  font-size: 11px;
+  color: rgba(232, 228, 220, 0.7);
+}
+
+.saved-places-title {
+  margin-top: 14px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: rgba(232, 228, 220, 0.45);
+}
+
+.loading-text {
+  font-size: 12px;
+  color: rgba(232, 228, 220, 0.7);
+}
+
+.empty-text {
+  font-size: 12px;
+  color: rgba(232, 228, 220, 0.5);
+}
+
+.place-card {
+  padding: 9px 10px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.place-card-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #d7ecff;
+}
+
+.place-card-coords {
+  font-size: 10px;
+  color: rgba(232, 228, 220, 0.6);
+  margin-top: 2px;
+}
+
+.incident-live-card {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  min-width: 240px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #141618;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+}
+
+.incident-live-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.incident-live-title {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  background-color: #ff3b3b;
+  border-radius: 50%;
+  animation: blink 1.2s infinite;
+}
+
+.live-close-btn {
+  border: none;
+  background: none;
+  color: rgba(232, 228, 220, 0.6);
+  cursor: pointer;
+}
+
+.live-image-wrap {
+  position: relative;
+  margin-top: 12px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.live-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.live-rec-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 4px 8px;
+  font-size: 10px;
+  border-radius: 4px;
+  font-family: monospace;
+  letter-spacing: 1px;
+}
+
+.incident-live-grid {
+  margin-top: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 12px;
+}
+
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
